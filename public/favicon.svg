@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d946ef"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <!-- Fondo oscuro con esquinas redondeadas -->
+  <rect width="32" height="32" rx="7" fill="#110d1a"/>
+  <!-- Pantalla de caja registradora -->
+  <rect x="6" y="4" width="20" height="8" rx="2" fill="#1a0d2e" stroke="url(#g)" stroke-width="1.5"/>
+  <!-- Símbolo $ en pantalla -->
+  <text x="16" y="11" text-anchor="middle" font-size="7" font-family="monospace" font-weight="900" fill="#d946ef">$</text>
+  <!-- Cuerpo de la caja -->
+  <rect x="3" y="14" width="26" height="13" rx="2.5" fill="#1a0d2e" stroke="url(#g)" stroke-width="1.5"/>
+  <!-- Teclas (3 columnas) -->
+  <rect x="6"  y="17" width="5" height="4" rx="1.5" fill="#d946ef" opacity="0.85"/>
+  <rect x="13" y="17" width="5" height="4" rx="1.5" fill="#a855f7" opacity="0.85"/>
+  <rect x="20" y="17" width="5" height="4" rx="1.5" fill="#7c3aed" opacity="0.85"/>
+  <!-- Gaveta -->
+  <rect x="6" y="23" width="19" height="2.5" rx="1" fill="url(#g)" opacity="0.6"/>
+  <!-- Punto handle de gaveta -->
+  <circle cx="15.5" cy="24.2" r="1.2" fill="#f0abfc"/>
+</svg>
