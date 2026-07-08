@@ -590,6 +590,7 @@ export default function App() {
   const [compromisos,  setCompromisos]  = useState([]);
   const [finanzasIvan, setFinanzasIvan] = useState([]);
   const [compromisosPersonales, setCompromisosPersonales] = useState([]);
+  const [carterasPatrimonio, setCarterasPatrimonio] = useState({ivan:[],laura:[]});
   const [vista,        setVista]        = useState("registro");
   const [modoOscuro,   setModoOscuro]   = useState(true);
   const [claves,       setClaves]       = useState(CLAVES_BASE);
@@ -844,8 +845,12 @@ export default function App() {
     (async()=>{
       setFinanzasIvan(await dbGetFinanzasIvan());
       setCompromisosPersonales(await dbGetCompromisosPersonales());
+      const cp = await dbGetConfig("carteras_patrimonio_v1");
+      if(cp) { try { const parsed = JSON.parse(cp); setCarterasPatrimonio({ivan:parsed.ivan||[], laura:parsed.laura||[]}); } catch(e){} }
     })();
   },[usuario]);
+
+  const guardarCarterasPatrimonio = (v) => { setCarterasPatrimonio(v); dbSetConfig("carteras_patrimonio_v1", JSON.stringify(v)); };
 
   const agregarFinanzaIvan = (f) => {
     const nuevo = { ...f, id:Date.now(), fechaISO:fechaISO() };
@@ -995,7 +1000,7 @@ export default function App() {
           {vista==="config"      && esAdmin && <VistaConfig      modoOscuro={modoOscuro} claves={claves} onGuardarClaves={guardarClaves} estados={estados} onGuardarEstados={guardarEstados} etiquetas={etiquetas} onGuardarEtiquetas={guardarEtiquetas} t={t}/>}
           {vista==="clave"       && <VistaCambiarClave usuario={usuario} claves={claves} onGuardar={guardarClaves} t={t} modoOscuro={modoOscuro} onVolver={()=>setVista("registro")}/>}
           {vista==="ranking"     && !esAdmin && <VistaRankingEmpleado registros={registros} usuario={usuario} t={t} modoOscuro={modoOscuro}/>}
-          {vista==="finanzasivan"&& usuario.id==="ivan" && <VistaFinanzasIvan finanzas={finanzasIvan} onAgregar={agregarFinanzaIvan} onEliminar={eliminarFinanzaIvan} compromisosPersonales={compromisosPersonales} onGuardarCompromisoPersonal={guardarCompromisoPersonal} onEliminarCompromisoPersonal={eliminarCompromisoPersonal} t={t} modoOscuro={modoOscuro}/>}
+          {vista==="finanzasivan"&& usuario.id==="ivan" && <VistaFinanzasIvan finanzas={finanzasIvan} onAgregar={agregarFinanzaIvan} onEliminar={eliminarFinanzaIvan} compromisosPersonales={compromisosPersonales} onGuardarCompromisoPersonal={guardarCompromisoPersonal} onEliminarCompromisoPersonal={eliminarCompromisoPersonal} carterasPatrimonio={carterasPatrimonio} onGuardarCarterasPatrimonio={guardarCarterasPatrimonio} t={t} modoOscuro={modoOscuro}/>}
         </div>
       </main>
 
@@ -3391,31 +3396,42 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
 }
 
 // ─── PATRIMONIO PERSONAL (Iván y Laura, separado del negocio) ─────────────────
-// Modelo tipo banco real: cada persona tiene varias CARTERAS (Efectivo, Nequi,
-// Bancolombia, Trii, etc). Cada movimiento (ingreso o gasto) se registra en una
-// cartera específica, así el saldo de cada cuenta siempre se sabe. También cada
-// persona puede tener compromisos mensuales (como arriendo) y deudas a plazo
-// (con cuotas), igual que el negocio pero por separado y privado — solo Iván
-// entra a esta pantalla.
+// Organizado como un mini-dashboard con SU PROPIO menú interno (Resumen /
+// Carteras / Movimientos / Compromisos / Deudas), a propósito muy distinto del
+// flujo de pasos del negocio — acá todo es tarjetas y clics directos, sin
+// wizard. Solo Iván entra aquí.
 const PATR_PERSONAS = [{id:"ivan",nombre:"Iván"},{id:"laura",nombre:"Laura"}];
 const CATS_PATR_ING   = ["Utilidad del negocio","Sueldo / trabajo independiente","Arriendo que recibe","Ventas personales","Regalo o ayuda","Otro ingreso"];
 const CATS_PATR_GASTO = ["Vivienda / Arriendo","Comida","Servicios (luz, agua, gas, internet)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Otro gasto"];
+const SECCIONES_PATR = [
+  {id:"resumen",      label:"Resumen",      icon:"chart"},
+  {id:"carteras",     label:"Carteras",     icon:"wallet"},
+  {id:"movimientos",  label:"Movimientos",  icon:"list"},
+  {id:"compromisos",  label:"Compromisos",  icon:"repeat"},
+  {id:"deudas",       label:"Deudas",       icon:"alert"},
+];
 
-function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonales, onGuardarCompromisoPersonal, onEliminarCompromisoPersonal, t, modoOscuro}){
+function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonales, onGuardarCompromisoPersonal, onEliminarCompromisoPersonal, carterasPatrimonio, onGuardarCarterasPatrimonio, t, modoOscuro}){
   const [personaSel,setPersonaSel] = useState("ivan");
-  const [tipo,setTipo]             = useState("ingreso");
-  const [cartera,setCartera]       = useState("");
-  const [categoria,setCategoria]   = useState(CATS_PATR_ING[0]);
-  const [monto,setMonto]           = useState("");
-  const [nota,setNota]             = useState("");
-  const [periodo,setPeriodo]       = useState("mes");
-  const [simCartera,setSimCartera] = useState("");
-  const [simMonto,setSimMonto]     = useState("");
+  const [seccion,setSeccion]       = useState("resumen");
 
-  // Formulario de compromiso mensual
+  // Movimiento
+  const [tipo,setTipo]           = useState("ingreso");
+  const [cartera,setCartera]     = useState("");
+  const [categoria,setCategoria] = useState(CATS_PATR_ING[0]);
+  const [monto,setMonto]         = useState("");
+  const [nota,setNota]           = useState("");
+  const [periodo,setPeriodo]     = useState("mes");
+
+  // Nueva cartera
+  const [nuevaCartera,setNuevaCartera] = useState("");
+  const [simCartera,setSimCartera]     = useState("");
+  const [simMonto,setSimMonto]         = useState("");
+
+  // Compromiso mensual
   const [cNombre,setCNombre] = useState(""); const [cDia,setCDia] = useState(1);
   const [cValor,setCValor]   = useState("");  const [cCartera,setCCartera] = useState(""); const [cNota,setCNota] = useState("");
-  // Formulario de deuda a plazo
+  // Deuda a plazo
   const [dNombre,setDNombre] = useState(""); const [dValorTotal,setDValorTotal] = useState(""); const [dCuota,setDCuota] = useState(""); const [dNota,setDNota] = useState("");
 
   const hoyISO = fechaISO();
@@ -3433,25 +3449,26 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
     return true;
   };
 
-  // ── Cálculos por persona: saldo de cada cartera y patrimonio neto ──────────
   const calcularPersona = (pid) => {
     const movs = finanzas.filter(f=>f.persona===pid);
-    const carteras = {};
+    const saldos = {};
     movs.forEach(f=>{
       const c = f.cartera || "Sin cartera";
-      carteras[c] = (carteras[c]||0) + (f.tipo==="ingreso" ? f.monto : -f.monto);
+      saldos[c] = (saldos[c]||0) + (f.tipo==="ingreso" ? f.monto : -f.monto);
     });
-    const patrimonioCarteras = Object.values(carteras).reduce((a,b)=>a+b,0);
+    // Incluir carteras creadas explícitamente aunque todavía no tengan movimientos (saldo 0)
+    (carterasPatrimonio[pid]||[]).forEach(c=>{ if(!(c in saldos)) saldos[c]=0; });
+    const patrimonioCarteras = Object.values(saldos).reduce((a,b)=>a+b,0);
     const deudas = compromisosPersonales.filter(c=>c.persona===pid && c.tipo==="deuda");
     const deudaPendiente = deudas.reduce((a,b)=>a+(b.saldoPendiente||0),0);
-    return { carteras, patrimonioCarteras, deudaPendiente, patrimonioNeto: patrimonioCarteras - deudaPendiente };
+    return { saldos, patrimonioCarteras, deudaPendiente, patrimonioNeto: patrimonioCarteras - deudaPendiente };
   };
-  const calcIvan = calcularPersona("ivan");
+  const calcIvan  = calcularPersona("ivan");
   const calcLaura = calcularPersona("laura");
   const patrimonioFamiliar = calcIvan.patrimonioNeto + calcLaura.patrimonioNeto;
-
   const calcSel = personaSel==="ivan" ? calcIvan : calcLaura;
-  const nombresCarteras = Object.keys(calcSel.carteras);
+  const nombresCarteras = Object.keys(calcSel.saldos);
+
   const movsPersona = finanzas.filter(f=>f.persona===personaSel);
   const vistas = movsPersona.filter(filtrarPeriodo);
   const ingPeriodo   = vistas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
@@ -3461,14 +3478,34 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
 
   const compromisosPersona = compromisosPersonales.filter(c=>c.persona===personaSel && c.tipo==="mensual");
   const deudasPersona      = compromisosPersonales.filter(c=>c.persona===personaSel && c.tipo==="deuda");
+  const proximosVencer = compromisosPersona.filter(c=>{
+    const pagado = c.pagado && c.pagadoMes===mesActual;
+    if(pagado) return false;
+    const d = c.dia-hoyNum; const dias = d<0?d+30:d;
+    return dias<=5;
+  });
 
+  const cambiarPersona = (pid) => { playSound("nav"); setPersonaSel(pid); setCartera(""); setSimCartera(""); };
   const cambiarTipo = (t2) => { setTipo(t2); setCategoria(t2==="ingreso"?CATS_PATR_ING[0]:CATS_PATR_GASTO[0]); };
+
+  const agregarCartera = () => {
+    const n = nuevaCartera.trim();
+    if(!n) return;
+    if(nombresCarteras.some(c=>c.toLowerCase()===n.toLowerCase())){ setNuevaCartera(""); return; }
+    playSound("success");
+    onGuardarCarterasPatrimonio({...carterasPatrimonio, [personaSel]: [...(carterasPatrimonio[personaSel]||[]), n]});
+    setNuevaCartera("");
+  };
+  const quitarCartera = (nombre) => {
+    playSound("click");
+    onGuardarCarterasPatrimonio({...carterasPatrimonio, [personaSel]: (carterasPatrimonio[personaSel]||[]).filter(c=>c!==nombre)});
+  };
 
   const agregarMov = () => {
     const n = parseFloat(String(monto).replace(/[^0-9.]/g,""));
-    if(!n||n<=0||!cartera.trim()) return;
+    if(!n||n<=0||!cartera) return;
     playSound(tipo==="ingreso"?"ingreso_ok":"egreso_ok");
-    onAgregar({tipo, persona:personaSel, cartera:cartera.trim(), categoria, monto:n, nota:nota||""});
+    onAgregar({tipo, persona:personaSel, cartera, categoria, monto:n, nota:nota||""});
     setMonto(""); setNota("");
   };
 
@@ -3500,14 +3537,29 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
   };
 
   const simN = parseFloat(String(simMonto).replace(/[^0-9.]/g,""))||0;
-  const saldoSimCartera = simCartera ? (calcSel.carteras[simCartera]||0) : 0;
+  const saldoSimCartera = simCartera ? (calcSel.saldos[simCartera]||0) : 0;
   const simAlcanza = simN>0 && simCartera && simN<=saldoSimCartera;
 
   const periodoLabel = {hoy:"hoy",semana:"últimos 7 días",mes:"últimos 30 días",todo:"siempre"}[periodo];
   const colorPersona = (pid) => pid==="ivan" ? t.acento : t.morado;
+  const nombrePersonaSel = PATR_PERSONAS.find(p=>p.id===personaSel).nombre;
+
+  const PeriodoBtns = () => (
+    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+      {[["hoy","Hoy"],["semana","7 días"],["mes","30 días"],["todo","Todo"]].map(([k,l])=>(
+        <button key={k} className="neo-btn" style={{
+          background: periodo===k?(modoOscuro?"rgba(59,130,246,0.12)":"rgba(37,99,235,0.1)"):t.surface,
+          border: `1px solid ${periodo===k?t.borderActivo:t.border}`,
+          color: periodo===k?t.acento:t.textoMuted,
+          padding:"7px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:periodo===k?700:500,
+          boxShadow: periodo===k?t.sombraBtnActivo:t.sombraBtn,
+        }} onClick={()=>setPeriodo(k)}>{l}</button>
+      ))}
+    </div>
+  );
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:820,margin:"0 auto"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:860,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{background:modoOscuro?"rgba(59,130,246,0.1)":"rgba(37,99,235,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
           <Icon name="wallet" size={24} color={t.acento}/>
@@ -3515,23 +3567,6 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
         <div>
           <div style={{fontWeight:800,fontSize:17,color:t.texto}}>Patrimonio</div>
           <div style={{color:t.textoMuted,fontSize:12}}>Privado — separado del negocio, solo tú lo ves</div>
-        </div>
-      </div>
-
-      {/* Hero: patrimonio familiar */}
-      <div style={{...card(t),borderRadius:16,padding:"22px",textAlign:"center",boxShadow:t.sombra}}>
-        <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Patrimonio familiar (Iván + Laura, después de deudas)</div>
-        <div style={{color:patrimonioFamiliar>=0?t.verde:t.rojo,fontWeight:800,fontSize:30,marginTop:6}}>{fmt(patrimonioFamiliar)}</div>
-        <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:12,flexWrap:"wrap"}}>
-          {PATR_PERSONAS.map(p=>{
-            const c = p.id==="ivan"?calcIvan:calcLaura;
-            return(
-              <div key={p.id} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",borderRadius:10,padding:"8px 16px",minWidth:140}}>
-                <div style={{fontSize:11,color:colorPersona(p.id),fontWeight:700}}>{p.nombre}</div>
-                <div style={{fontSize:15,fontWeight:800,color:t.texto}}>{fmt(c.patrimonioNeto)}</div>
-              </div>
-            );
-          })}
         </div>
       </div>
 
@@ -3543,212 +3578,284 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
             background:personaSel===p.id?(modoOscuro?`${colorPersona(p.id)}22`:`${colorPersona(p.id)}18`):t.surface,
             border:`1.5px solid ${personaSel===p.id?colorPersona(p.id):t.border}`,
             color:personaSel===p.id?colorPersona(p.id):t.textoMuted,
-          }} onClick={()=>{playSound("nav");setPersonaSel(p.id);setCartera("");setSimCartera("");}}>{p.nombre}</button>
+          }} onClick={()=>cambiarPersona(p.id)}>{p.nombre}</button>
         ))}
       </div>
 
-      {/* Carteras de la persona seleccionada */}
-      <div style={{...card(t),borderRadius:14,padding:"14px 16px"}}>
-        <div style={{fontWeight:700,fontSize:12,color:t.textoSub,marginBottom:10,textTransform:"uppercase",letterSpacing:.5}}>Carteras de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
-        {nombresCarteras.length===0 && <div style={{color:t.textoMin,fontSize:12}}>Aún no hay carteras — se crean solas cuando registras un movimiento con un nombre de cartera nuevo.</div>}
-        <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
-          {nombresCarteras.map(c=>(
-            <div key={c} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",border:`1px solid ${t.border}`,borderRadius:10,padding:"8px 14px",minWidth:130}}>
-              <div style={{fontSize:11,color:t.textoMuted}}>{c}</div>
-              <div style={{fontSize:14,fontWeight:800,color:calcSel.carteras[c]>=0?t.texto:t.rojo}}>{fmt(calcSel.carteras[c])}</div>
+      {/* Menú interno de secciones — tipo dashboard, no interfiere con el resto */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",background:modoOscuro?"rgba(15,23,42,0.4)":"rgba(218,227,240,0.4)",borderRadius:12,padding:6}}>
+        {SECCIONES_PATR.map(s=>(
+          <button key={s.id} className="neo-btn" style={{
+            flex:"1 1 auto",display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+            padding:"9px 12px",borderRadius:9,cursor:"pointer",fontSize:12,fontWeight:700,
+            background:seccion===s.id?t.surfaceSolid:"transparent",
+            border:seccion===s.id?`1px solid ${t.border}`:"1px solid transparent",
+            color:seccion===s.id?t.acento:t.textoMuted,
+            boxShadow:seccion===s.id?t.sombra:"none",
+          }} onClick={()=>{playSound("nav");setSeccion(s.id);}}>
+            <Icon name={s.icon} size={13} color={seccion===s.id?t.acento:t.textoMuted}/> {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ══════════════ RESUMEN ══════════════ */}
+      {seccion==="resumen" && (<>
+        <div style={{...card(t),borderRadius:16,padding:"22px",textAlign:"center",boxShadow:t.sombra}}>
+          <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Patrimonio familiar (después de deudas)</div>
+          <div style={{color:patrimonioFamiliar>=0?t.verde:t.rojo,fontWeight:800,fontSize:30,marginTop:6}}>{fmt(patrimonioFamiliar)}</div>
+          <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:12,flexWrap:"wrap"}}>
+            {PATR_PERSONAS.map(p=>{
+              const c = p.id==="ivan"?calcIvan:calcLaura;
+              return(
+                <div key={p.id} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",borderRadius:10,padding:"8px 16px",minWidth:140}}>
+                  <div style={{fontSize:11,color:colorPersona(p.id),fontWeight:700}}>{p.nombre}</div>
+                  <div style={{fontSize:15,fontWeight:800,color:t.texto}}>{fmt(c.patrimonioNeto)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <PeriodoBtns/>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
+          {[
+            {label:`${nombrePersonaSel} le entró`,  val:fmt(ingPeriodo),   color:t.verde},
+            {label:`${nombrePersonaSel} gastó`,     val:fmt(gastoPeriodo), color:t.rojo},
+            {label:"Le quedó libre", val:fmt(libre), color:libre>=0?t.amarillo:t.rojo},
+          ].map(k=>(
+            <div key={k.label} style={{...card(t),borderRadius:14,padding:"16px",textAlign:"center"}}>
+              <div style={{color:k.color,fontSize:17,fontWeight:800}}>{k.val}</div>
+              <div style={{color:t.textoMuted,fontSize:11,marginTop:4,textTransform:"uppercase",letterSpacing:.5}}>{k.label}</div>
             </div>
           ))}
         </div>
-      </div>
 
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        {[["hoy","Hoy"],["semana","7 días"],["mes","30 días"],["todo","Todo"]].map(([k,l])=>(
-          <button key={k} className="neo-btn" style={{
-            background: periodo===k?(modoOscuro?"rgba(59,130,246,0.12)":"rgba(37,99,235,0.1)"):t.surface,
-            border: `1px solid ${periodo===k?t.borderActivo:t.border}`,
-            color: periodo===k?t.acento:t.textoMuted,
-            padding:"7px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:periodo===k?700:500,
-            boxShadow: periodo===k?t.sombraBtnActivo:t.sombraBtn,
-          }} onClick={()=>setPeriodo(k)}>{l}</button>
-        ))}
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
-        {[
-          {label:"Le entró",  val:fmt(ingPeriodo),   color:t.verde},
-          {label:"Gastó",     val:fmt(gastoPeriodo), color:t.rojo},
-          {label:"Le quedó libre", val:fmt(libre),    color:libre>=0?t.amarillo:t.rojo},
-        ].map(k=>(
-          <div key={k.label} style={{...card(t),borderRadius:14,padding:"16px",textAlign:"center"}}>
-            <div style={{color:k.color,fontSize:17,fontWeight:800}}>{k.val}</div>
-            <div style={{color:t.textoMuted,fontSize:11,marginTop:4,textTransform:"uppercase",letterSpacing:.5}}>{k.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Simulador por cartera */}
-      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:10,color:t.textoSub,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:.5}}>
-          <Icon name="zap" size={14} color={t.acento}/> ¿Alcanza en una cartera?
-        </div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:150}}>
-            <label style={labelStyle(t)}>Cartera</label>
-            <select style={inputStyle(t,modoOscuro)} value={simCartera} onChange={e=>setSimCartera(e.target.value)}>
-              <option value="">Elige una cartera...</option>
-              {nombresCarteras.map(c=><option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div style={{flex:1,minWidth:150}}>
-            <label style={labelStyle(t)}>Precio a pagar</label>
-            <input type="number" style={inputStyle(t,modoOscuro)} value={simMonto} onChange={e=>setSimMonto(e.target.value)} placeholder="Ej: 150000"/>
-          </div>
-        </div>
-        {simN>0 && simCartera && (
-          <div style={{marginTop:12,padding:"10px 14px",borderRadius:10,fontSize:13,fontWeight:600,
-            background:simAlcanza?"rgba(34,197,94,0.1)":"rgba(239,68,68,0.1)",
-            border:`1px solid ${simAlcanza?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)"}`,
-            color:simAlcanza?t.verde:t.rojo,
-          }}>
-            {simAlcanza
-              ? `Sí alcanza. En "${simCartera}" quedarían ${fmt(saldoSimCartera-simN)}.`
-              : `En "${simCartera}" hay ${fmt(saldoSimCartera)} — faltan ${fmt(simN-saldoSimCartera)}.`}
+        {proximosVencer.length>0 && (
+          <div style={{...card(t),borderRadius:14,padding:"14px 16px",borderLeft:`3px solid ${t.rojo}`}}>
+            <div style={{fontWeight:700,fontSize:12,color:t.rojo,marginBottom:6,textTransform:"uppercase",letterSpacing:.5,display:"flex",alignItems:"center",gap:6}}>
+              <Icon name="bell" size={13} color={t.rojo}/> Compromisos por vencer
+            </div>
+            <div style={{fontSize:13,color:t.textoSub}}>{proximosVencer.map(c=>`${c.nombre} (día ${c.dia})`).join(" · ")}</div>
           </div>
         )}
-      </div>
 
-      {/* Nuevo movimiento */}
-      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Nuevo movimiento de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
-        <div style={{display:"flex",gap:8,marginBottom:12}}>
-          <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
-            background:tipo==="ingreso"?"rgba(34,197,94,0.12)":t.surface, border:`1.5px solid ${tipo==="ingreso"?"#22c55e":t.border}`,color:tipo==="ingreso"?t.verde:t.textoMuted,
-          }} onClick={()=>cambiarTipo("ingreso")}>+ Ingreso</button>
-          <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
-            background:tipo==="gasto"?"rgba(239,68,68,0.12)":t.surface, border:`1.5px solid ${tipo==="gasto"?"#ef4444":t.border}`,color:tipo==="gasto"?t.rojo:t.textoMuted,
-          }} onClick={()=>cambiarTipo("gasto")}>- Gasto</button>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <div>
-            <label style={labelStyle(t)}>{tipo==="ingreso"?"¿A qué cartera entra?":"¿De qué cartera sale?"}</label>
-            <input style={inputStyle(t,modoOscuro)} list={`carteras-${personaSel}`} value={cartera} onChange={e=>setCartera(e.target.value)} placeholder="Ej: Efectivo, Nequi, Bancolombia, Trii..."/>
-            <datalist id={`carteras-${personaSel}`}>
-              {nombresCarteras.map(c=><option key={c} value={c}/>)}
-            </datalist>
+        <div style={{...card(t),borderRadius:14,padding:"14px 16px"}}>
+          <div style={{fontWeight:700,fontSize:12,color:t.textoSub,marginBottom:10,textTransform:"uppercase",letterSpacing:.5}}>Carteras de {nombrePersonaSel}</div>
+          {nombresCarteras.length===0 && <div style={{color:t.textoMin,fontSize:12}}>Aún no tiene carteras. Ve a la pestaña "Carteras" para crear la primera.</div>}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+            {nombresCarteras.map(c=>(
+              <div key={c} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",border:`1px solid ${t.border}`,borderRadius:10,padding:"8px 14px",minWidth:130}}>
+                <div style={{fontSize:11,color:t.textoMuted}}>{c}</div>
+                <div style={{fontSize:14,fontWeight:800,color:calcSel.saldos[c]>=0?t.texto:t.rojo}}>{fmt(calcSel.saldos[c])}</div>
+              </div>
+            ))}
           </div>
-          <div>
-            <label style={labelStyle(t)}>Categoría</label>
-            <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
-              {(tipo==="ingreso"?CATS_PATR_ING:CATS_PATR_GASTO).map(c=><option key={c}>{c}</option>)}
-            </select>
+        </div>
+
+        {topGastos.length>0 && (
+          <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+            <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>En qué se le va la plata a {nombrePersonaSel}</div>
+            {topGastos.map(([cat,val])=>(
+              <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.2)"}`}}>
+                <span style={{color:t.textoSub,fontSize:13}}>{cat}</span>
+                <span style={{color:t.rojo,fontWeight:600,fontSize:13}}>{fmt(val)}</span>
+              </div>
+            ))}
           </div>
-          <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
-          <div><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Mercado semana..."/></div>
-        </div>
-        <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"10px 24px",marginTop:14}} onClick={agregarMov}>
-          <Icon name="check" size={15}/> Guardar
-        </button>
-      </div>
+        )}
+      </>)}
 
-      {/* Compromisos mensuales */}
-      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Compromisos mensuales de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
-        {compromisosPersona.length===0 && <div style={{color:t.textoMin,fontSize:13,marginBottom:10}}>Sin compromisos registrados.</div>}
-        {compromisosPersona.map(c=>{
-          const pagadoEsteMes = c.pagado && c.pagadoMes===mesActual;
-          const dias = (()=>{ const d=c.dia-hoyNum; return d<0?d+30:d; })();
-          return(
-            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:8,flexWrap:"wrap",
-              background:pagadoEsteMes?"rgba(34,197,94,0.08)":(dias<=2?"rgba(239,68,68,0.08)":modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"),
-              border:`1px solid ${pagadoEsteMes?"rgba(34,197,94,0.3)":t.border}`}}>
-              <div style={{flex:1,minWidth:120}}>
-                <div style={{fontWeight:700,fontSize:13,color:t.texto,textDecoration:pagadoEsteMes?"line-through":"none"}}>{c.nombre}</div>
-                <div style={{fontSize:11,color:t.textoMuted}}>Día {c.dia}{c.cartera?` · ${c.cartera}`:""}{c.nota?` · ${c.nota}`:""}</div>
-              </div>
-              <div style={{fontWeight:800,color:pagadoEsteMes?t.verde:t.rojo}}>{fmt(c.valor)}</div>
-              <button className="neo-btn" style={{
-                background:pagadoEsteMes?"rgba(34,197,94,0.18)":(modoOscuro?"rgba(255,255,255,0.05)":"rgba(0,0,0,0.05)"),
-                border:`1.5px solid ${pagadoEsteMes?"#22c55e":t.border}`,color:pagadoEsteMes?"#22c55e":t.textoMuted,
-                padding:"5px 10px",borderRadius:6,cursor:"pointer",
-              }} onClick={()=>marcarPagadoCompromiso(c)}><Icon name="check" size={13} color={pagadoEsteMes?"#22c55e":t.textoMuted}/></button>
-              <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"5px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminarCompromisoPersonal(c.id)}><Icon name="trash" size={11}/></button>
-            </div>
-          );
-        })}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
-          <input style={inputStyle(t,modoOscuro)} value={cNombre} onChange={e=>setCNombre(e.target.value)} placeholder="Nombre (ej: Arriendo)"/>
-          <input type="number" style={inputStyle(t,modoOscuro)} value={cDia} onChange={e=>setCDia(parseInt(e.target.value)||1)} placeholder="Día del mes" min="1" max="31"/>
-          <input type="number" style={inputStyle(t,modoOscuro)} value={cValor} onChange={e=>setCValor(e.target.value)} placeholder="Valor"/>
-          <input style={inputStyle(t,modoOscuro)} value={cCartera} onChange={e=>setCCartera(e.target.value)} placeholder="Cartera de pago (opcional)"/>
-        </div>
-        <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),marginTop:8}} onClick={agregarCompromiso}><Icon name="plus" size={13}/> Agregar compromiso</button>
-      </div>
-
-      {/* Deudas a plazo */}
-      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Deudas a plazo de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
-        {deudasPersona.length===0 && <div style={{color:t.textoMin,fontSize:13,marginBottom:10}}>Sin deudas registradas.</div>}
-        {deudasPersona.map(d=>{
-          const liquidada = (d.saldoPendiente||0)<=0;
-          return(
-            <div key={d.id} style={{padding:"10px 12px",borderRadius:10,marginBottom:8,
-              background:liquidada?"rgba(34,197,94,0.08)":(modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"),
-              border:`1px solid ${liquidada?"rgba(34,197,94,0.3)":t.border}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:13,color:t.texto}}>{d.nombre} {liquidada && <span style={{color:t.verde,fontSize:11}}>· Pagada</span>}</div>
-                  <div style={{fontSize:11,color:t.textoMuted}}>Cuota {fmt(d.valor)} · Total {fmt(d.valorTotal)}{d.nota?` · ${d.nota}`:""}</div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontWeight:800,color:liquidada?t.verde:t.rojo}}>{fmt(d.saldoPendiente)}</div>
-                  <div style={{fontSize:10,color:t.textoMuted}}>pendiente</div>
-                </div>
-              </div>
-              <div style={{display:"flex",gap:8,marginTop:8}}>
-                {!liquidada && <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),padding:"5px 12px",fontSize:12}} onClick={()=>pagarCuotaDeuda(d)}>Pagar cuota ({fmt(d.valor)})</button>}
-                <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"5px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminarCompromisoPersonal(d.id)}><Icon name="trash" size={11}/></button>
-              </div>
-            </div>
-          );
-        })}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
-          <input style={{...inputStyle(t,modoOscuro),gridColumn:"1 / -1"}} value={dNombre} onChange={e=>setDNombre(e.target.value)} placeholder="Nombre de la deuda (ej: Préstamo moto)"/>
-          <input type="number" style={inputStyle(t,modoOscuro)} value={dValorTotal} onChange={e=>setDValorTotal(e.target.value)} placeholder="Valor total de la deuda"/>
-          <input type="number" style={inputStyle(t,modoOscuro)} value={dCuota} onChange={e=>setDCuota(e.target.value)} placeholder="Valor de cada cuota"/>
-          <input style={{...inputStyle(t,modoOscuro),gridColumn:"1 / -1"}} value={dNota} onChange={e=>setDNota(e.target.value)} placeholder="Nota (opcional)"/>
-        </div>
-        <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),marginTop:8}} onClick={agregarDeuda}><Icon name="plus" size={13}/> Agregar deuda</button>
-      </div>
-
-      {/* Top gastos */}
-      {topGastos.length>0 && (
+      {/* ══════════════ CARTERAS ══════════════ */}
+      {seccion==="carteras" && (<>
         <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>En qué se le va la plata a {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
-          {topGastos.map(([cat,val])=>(
-            <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.2)"}`}}>
-              <span style={{color:t.textoSub,fontSize:13}}>{cat}</span>
-              <span style={{color:t.rojo,fontWeight:600,fontSize:13}}>{fmt(val)}</span>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Carteras de {nombrePersonaSel}</div>
+          {nombresCarteras.length===0 && <div style={{color:t.textoMin,fontSize:13,marginBottom:12}}>Todavía no hay carteras creadas.</div>}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
+            {nombresCarteras.map(c=>(
+              <div key={c} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",border:`1px solid ${t.border}`,borderRadius:10,padding:"10px 14px",minWidth:150,display:"flex",flexDirection:"column",gap:4}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:12,color:t.textoMuted}}>{c}</span>
+                  <button className="neo-btn" title="Quitar de la lista (no borra el historial)" style={{background:"none",border:"none",cursor:"pointer",color:t.textoMuted,display:"flex",padding:1}} onClick={()=>quitarCartera(c)}>
+                    <Icon name="x" size={11} color={t.textoMuted}/>
+                  </button>
+                </div>
+                <div style={{fontSize:16,fontWeight:800,color:calcSel.saldos[c]>=0?t.texto:t.rojo}}>{fmt(calcSel.saldos[c])}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <input style={{...inputStyle(t,modoOscuro),flex:1}} value={nuevaCartera} onChange={e=>setNuevaCartera(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&agregarCartera()} placeholder="Ej: Nequi, Bancolombia, Trii, Efectivo..."/>
+            <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"9px 18px"}} onClick={agregarCartera}>
+              <Icon name="plus" size={14}/> Crear cartera
+            </button>
+          </div>
+        </div>
+
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:10,color:t.textoSub,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:.5}}>
+            <Icon name="zap" size={14} color={t.acento}/> ¿Alcanza en una cartera?
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:150}}>
+              <label style={labelStyle(t)}>Cartera</label>
+              <select style={inputStyle(t,modoOscuro)} value={simCartera} onChange={e=>setSimCartera(e.target.value)}>
+                <option value="">Elige una cartera...</option>
+                {nombresCarteras.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
-          ))}
+            <div style={{flex:1,minWidth:150}}>
+              <label style={labelStyle(t)}>Precio a pagar</label>
+              <input type="number" style={inputStyle(t,modoOscuro)} value={simMonto} onChange={e=>setSimMonto(e.target.value)} placeholder="Ej: 150000"/>
+            </div>
+          </div>
+          {simN>0 && simCartera && (
+            <div style={{marginTop:12,padding:"10px 14px",borderRadius:10,fontSize:13,fontWeight:600,
+              background:simAlcanza?"rgba(34,197,94,0.1)":"rgba(239,68,68,0.1)",
+              border:`1px solid ${simAlcanza?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)"}`,
+              color:simAlcanza?t.verde:t.rojo,
+            }}>
+              {simAlcanza
+                ? `Sí alcanza. En "${simCartera}" quedarían ${fmt(saldoSimCartera-simN)}.`
+                : `En "${simCartera}" hay ${fmt(saldoSimCartera)} — faltan ${fmt(simN-saldoSimCartera)}.`}
+            </div>
+          )}
+        </div>
+      </>)}
+
+      {/* ══════════════ MOVIMIENTOS ══════════════ */}
+      {seccion==="movimientos" && (<>
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Nuevo movimiento de {nombrePersonaSel}</div>
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+              background:tipo==="ingreso"?"rgba(34,197,94,0.12)":t.surface, border:`1.5px solid ${tipo==="ingreso"?"#22c55e":t.border}`,color:tipo==="ingreso"?t.verde:t.textoMuted,
+            }} onClick={()=>cambiarTipo("ingreso")}>+ Ingreso</button>
+            <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+              background:tipo==="gasto"?"rgba(239,68,68,0.12)":t.surface, border:`1.5px solid ${tipo==="gasto"?"#ef4444":t.border}`,color:tipo==="gasto"?t.rojo:t.textoMuted,
+            }} onClick={()=>cambiarTipo("gasto")}>- Gasto</button>
+          </div>
+          {nombresCarteras.length===0 ? (
+            <div style={{background:modoOscuro?"rgba(245,158,11,0.08)":"rgba(217,119,6,0.08)",border:"1px solid rgba(245,158,11,0.3)",borderRadius:10,padding:"10px 14px",fontSize:13,color:t.amarillo}}>
+              Primero crea una cartera en la pestaña "Carteras" (ej: Efectivo, Nequi) para poder registrar movimientos.
+            </div>
+          ) : (
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div>
+                <label style={labelStyle(t)}>{tipo==="ingreso"?"¿A qué cartera entra?":"¿De qué cartera sale?"}</label>
+                <select style={inputStyle(t,modoOscuro)} value={cartera} onChange={e=>setCartera(e.target.value)}>
+                  <option value="">Elige...</option>
+                  {nombresCarteras.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle(t)}>Categoría</label>
+                <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
+                  {(tipo==="ingreso"?CATS_PATR_ING:CATS_PATR_GASTO).map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
+              <div><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Mercado semana..."/></div>
+            </div>
+          )}
+          <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"10px 24px",marginTop:14}} disabled={nombresCarteras.length===0} onClick={agregarMov}>
+            <Icon name="check" size={15}/> Guardar
+          </button>
+        </div>
+
+        <PeriodoBtns/>
+
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Movimientos de {nombrePersonaSel} ({vistas.length})</div>
+          {vistas.length===0 && <div style={{color:t.textoMin,textAlign:"center",padding:24,fontSize:13}}>Sin movimientos en este período.</div>}
+          <div style={{maxHeight:400,overflowY:"auto"}}>
+            {vistas.map(f=>(
+              <div key={f.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:13,flexWrap:"wrap"}}>
+                <Icon name={f.tipo==="ingreso"?"arrow_up":"arrow_down"} size={13} color={f.tipo==="ingreso"?t.verde:t.rojo}/>
+                <span style={{flex:1,color:t.textoSub,minWidth:140}}>{f.categoria} · <b>{f.cartera}</b>{f.nota?` · ${f.nota}`:""}</span>
+                <span style={{color:f.tipo==="ingreso"?t.verde:t.rojo,fontWeight:700}}>{f.tipo==="gasto"?"-":""}{fmt(f.monto)}</span>
+                <span style={{color:t.textoMin,fontSize:11}}>{f.fechaISO}</span>
+                <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminar(f.id)}><Icon name="trash" size={11}/></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>)}
+
+      {/* ══════════════ COMPROMISOS ══════════════ */}
+      {seccion==="compromisos" && (
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Compromisos mensuales de {nombrePersonaSel}</div>
+          {compromisosPersona.length===0 && <div style={{color:t.textoMin,fontSize:13,marginBottom:10}}>Sin compromisos registrados.</div>}
+          {compromisosPersona.map(c=>{
+            const pagadoEsteMes = c.pagado && c.pagadoMes===mesActual;
+            const dias = (()=>{ const d=c.dia-hoyNum; return d<0?d+30:d; })();
+            return(
+              <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:8,flexWrap:"wrap",
+                background:pagadoEsteMes?"rgba(34,197,94,0.08)":(dias<=2?"rgba(239,68,68,0.08)":modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"),
+                border:`1px solid ${pagadoEsteMes?"rgba(34,197,94,0.3)":t.border}`}}>
+                <div style={{flex:1,minWidth:120}}>
+                  <div style={{fontWeight:700,fontSize:13,color:t.texto,textDecoration:pagadoEsteMes?"line-through":"none"}}>{c.nombre}</div>
+                  <div style={{fontSize:11,color:t.textoMuted}}>Día {c.dia}{c.cartera?` · ${c.cartera}`:""}{c.nota?` · ${c.nota}`:""}</div>
+                </div>
+                <div style={{fontWeight:800,color:pagadoEsteMes?t.verde:t.rojo}}>{fmt(c.valor)}</div>
+                <button className="neo-btn" style={{
+                  background:pagadoEsteMes?"rgba(34,197,94,0.18)":(modoOscuro?"rgba(255,255,255,0.05)":"rgba(0,0,0,0.05)"),
+                  border:`1.5px solid ${pagadoEsteMes?"#22c55e":t.border}`,color:pagadoEsteMes?"#22c55e":t.textoMuted,
+                  padding:"5px 10px",borderRadius:6,cursor:"pointer",
+                }} onClick={()=>marcarPagadoCompromiso(c)}><Icon name="check" size={13} color={pagadoEsteMes?"#22c55e":t.textoMuted}/></button>
+                <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"5px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminarCompromisoPersonal(c.id)}><Icon name="trash" size={11}/></button>
+              </div>
+            );
+          })}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+            <input style={inputStyle(t,modoOscuro)} value={cNombre} onChange={e=>setCNombre(e.target.value)} placeholder="Nombre (ej: Arriendo)"/>
+            <input type="number" style={inputStyle(t,modoOscuro)} value={cDia} onChange={e=>setCDia(parseInt(e.target.value)||1)} placeholder="Día del mes" min="1" max="31"/>
+            <input type="number" style={inputStyle(t,modoOscuro)} value={cValor} onChange={e=>setCValor(e.target.value)} placeholder="Valor"/>
+            <input style={inputStyle(t,modoOscuro)} value={cCartera} onChange={e=>setCCartera(e.target.value)} placeholder="Cartera de pago (opcional)"/>
+          </div>
+          <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),marginTop:8}} onClick={agregarCompromiso}><Icon name="plus" size={13}/> Agregar compromiso</button>
         </div>
       )}
 
-      {/* Historial */}
-      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Movimientos de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre} ({vistas.length})</div>
-        {vistas.length===0 && <div style={{color:t.textoMin,textAlign:"center",padding:24,fontSize:13}}>Sin movimientos en este período.</div>}
-        <div style={{maxHeight:400,overflowY:"auto"}}>
-          {vistas.map(f=>(
-            <div key={f.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:13,flexWrap:"wrap"}}>
-              <Icon name={f.tipo==="ingreso"?"arrow_up":"arrow_down"} size={13} color={f.tipo==="ingreso"?t.verde:t.rojo}/>
-              <span style={{flex:1,color:t.textoSub,minWidth:140}}>{f.categoria} · <b>{f.cartera}</b>{f.nota?` · ${f.nota}`:""}</span>
-              <span style={{color:f.tipo==="ingreso"?t.verde:t.rojo,fontWeight:700}}>{f.tipo==="gasto"?"-":""}{fmt(f.monto)}</span>
-              <span style={{color:t.textoMin,fontSize:11}}>{f.fechaISO}</span>
-              <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminar(f.id)}><Icon name="trash" size={11}/></button>
-            </div>
-          ))}
+      {/* ══════════════ DEUDAS ══════════════ */}
+      {seccion==="deudas" && (
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Deudas a plazo de {nombrePersonaSel}</div>
+          {deudasPersona.length===0 && <div style={{color:t.textoMin,fontSize:13,marginBottom:10}}>Sin deudas registradas.</div>}
+          {deudasPersona.map(d=>{
+            const liquidada = (d.saldoPendiente||0)<=0;
+            return(
+              <div key={d.id} style={{padding:"10px 12px",borderRadius:10,marginBottom:8,
+                background:liquidada?"rgba(34,197,94,0.08)":(modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"),
+                border:`1px solid ${liquidada?"rgba(34,197,94,0.3)":t.border}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:13,color:t.texto}}>{d.nombre} {liquidada && <span style={{color:t.verde,fontSize:11}}>· Pagada</span>}</div>
+                    <div style={{fontSize:11,color:t.textoMuted}}>Cuota {fmt(d.valor)} · Total {fmt(d.valorTotal)}{d.nota?` · ${d.nota}`:""}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontWeight:800,color:liquidada?t.verde:t.rojo}}>{fmt(d.saldoPendiente)}</div>
+                    <div style={{fontSize:10,color:t.textoMuted}}>pendiente</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,marginTop:8}}>
+                  {!liquidada && <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),padding:"5px 12px",fontSize:12}} onClick={()=>pagarCuotaDeuda(d)}>Pagar cuota ({fmt(d.valor)})</button>}
+                  <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"5px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminarCompromisoPersonal(d.id)}><Icon name="trash" size={11}/></button>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+            <input style={{...inputStyle(t,modoOscuro),gridColumn:"1 / -1"}} value={dNombre} onChange={e=>setDNombre(e.target.value)} placeholder="Nombre de la deuda (ej: Préstamo moto)"/>
+            <input type="number" style={inputStyle(t,modoOscuro)} value={dValorTotal} onChange={e=>setDValorTotal(e.target.value)} placeholder="Valor total de la deuda"/>
+            <input type="number" style={inputStyle(t,modoOscuro)} value={dCuota} onChange={e=>setDCuota(e.target.value)} placeholder="Valor de cada cuota"/>
+            <input style={{...inputStyle(t,modoOscuro),gridColumn:"1 / -1"}} value={dNota} onChange={e=>setDNota(e.target.value)} placeholder="Nota (opcional)"/>
+          </div>
+          <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),marginTop:8}} onClick={agregarDeuda}><Icon name="plus" size={13}/> Agregar deuda</button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -4005,30 +4112,10 @@ function VistaUsuarios({claves, onGuardarClaves, estados, onGuardarEstados, t, m
 
 // ─── CONFIGURACIÓN (admin) ────────────────────────────────────────────────────
 // ─── ETIQUETAS (categorías configurables de ingresos y gastos) ───────────────
-function VistaEtiquetas({etiquetas, onGuardarEtiquetas, t, modoOscuro}){
-  const [nuevaIng, setNuevaIng] = useState("");
-  const [nuevaEgr, setNuevaEgr] = useState("");
-  const [localIng, setLocalIng] = useState("ambos");
-  const [localEgr, setLocalEgr] = useState("ambos");
-  const [msg, setMsg] = useState(null);
-
-  const avisar = (texto) => { setMsg(texto); setTimeout(()=>setMsg(null), 2500); };
-  const labelLocal = (l) => l==="ambos" ? "Ambos locales" : l==="internet52" ? "Internet La 52" : "Trámites y Servicios";
-
-  const agregar = (tipo, valor, setValor, local) => {
-    const v = valor.trim();
-    if(!v) return;
-    if(etiquetas[tipo].some(e=>e.nombre.toLowerCase()===v.toLowerCase())){ avisar("Esa etiqueta ya existe"); return; }
-    playSound("success");
-    onGuardarEtiquetas({...etiquetas, [tipo]:[...etiquetas[tipo], {nombre:v, local}]});
-    setValor("");
-  };
-  const quitar = (tipo, nombre) => {
-    playSound("click");
-    onGuardarEtiquetas({...etiquetas, [tipo]: etiquetas[tipo].filter(e=>e.nombre!==nombre)});
-  };
-
-  const Lista = ({tipo, titulo, color, nuevoValor, setNuevoValor, localSel, setLocalSel}) => (
+// Componente aparte a nivel de módulo (antes estaba definido DENTRO de VistaEtiquetas,
+// lo que hacía que React lo recreara en cada tecla y el input perdiera el foco tras cada letra).
+function EtiquetaLista({tipo, titulo, color, etiquetas, agregar, quitar, labelLocal, nuevoValor, setNuevoValor, localSel, setLocalSel, t, modoOscuro}){
+  return(
     <div style={{background:modoOscuro?"rgba(15,23,42,0.55)":"rgba(218,227,240,0.5)",borderRadius:14,padding:"14px 16px",flex:1,minWidth:260}}>
       <div style={{fontWeight:700,fontSize:12,color:color,marginBottom:10,textTransform:"uppercase",letterSpacing:.5}}>{titulo}</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
@@ -4059,6 +4146,30 @@ function VistaEtiquetas({etiquetas, onGuardarEtiquetas, t, modoOscuro}){
       </div>
     </div>
   );
+}
+
+function VistaEtiquetas({etiquetas, onGuardarEtiquetas, t, modoOscuro}){
+  const [nuevaIng, setNuevaIng] = useState("");
+  const [nuevaEgr, setNuevaEgr] = useState("");
+  const [localIng, setLocalIng] = useState("ambos");
+  const [localEgr, setLocalEgr] = useState("ambos");
+  const [msg, setMsg] = useState(null);
+
+  const avisar = (texto) => { setMsg(texto); setTimeout(()=>setMsg(null), 2500); };
+  const labelLocal = (l) => l==="ambos" ? "Ambos locales" : l==="internet52" ? "Internet La 52" : "Trámites y Servicios";
+
+  const agregar = (tipo, valor, setValor, local) => {
+    const v = valor.trim();
+    if(!v) return;
+    if(etiquetas[tipo].some(e=>e.nombre.toLowerCase()===v.toLowerCase())){ avisar("Esa etiqueta ya existe"); return; }
+    playSound("success");
+    onGuardarEtiquetas({...etiquetas, [tipo]:[...etiquetas[tipo], {nombre:v, local}]});
+    setValor("");
+  };
+  const quitar = (tipo, nombre) => {
+    playSound("click");
+    onGuardarEtiquetas({...etiquetas, [tipo]: etiquetas[tipo].filter(e=>e.nombre!==nombre)});
+  };
 
   return(
     <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
@@ -4074,8 +4185,8 @@ function VistaEtiquetas({etiquetas, onGuardarEtiquetas, t, modoOscuro}){
         </div>
       )}
       <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-        <Lista tipo="ingreso" titulo="Ingresos / Servicios" color={t.verde} nuevoValor={nuevaIng} setNuevoValor={setNuevaIng} localSel={localIng} setLocalSel={setLocalIng}/>
-        <Lista tipo="egreso"  titulo="Gastos"               color={t.rojo}  nuevoValor={nuevaEgr} setNuevoValor={setNuevaEgr} localSel={localEgr} setLocalSel={setLocalEgr}/>
+        <EtiquetaLista tipo="ingreso" titulo="Ingresos / Servicios" color={t.verde} etiquetas={etiquetas} agregar={agregar} quitar={quitar} labelLocal={labelLocal} nuevoValor={nuevaIng} setNuevoValor={setNuevaIng} localSel={localIng} setLocalSel={setLocalIng} t={t} modoOscuro={modoOscuro}/>
+        <EtiquetaLista tipo="egreso"  titulo="Gastos"               color={t.rojo}  etiquetas={etiquetas} agregar={agregar} quitar={quitar} labelLocal={labelLocal} nuevoValor={nuevaEgr} setNuevoValor={setNuevaEgr} localSel={localEgr} setLocalSel={setLocalEgr} t={t} modoOscuro={modoOscuro}/>
       </div>
     </div>
   );
