@@ -451,62 +451,65 @@ const getPasos = (esAdmin, tipo) => {
 // ─── TEMA ─────────────────────────────────────────────────────────────────────
 // Noche: ciruela/violeta profundo con magenta vibrante — atmosférico y motivador
 // Día: crema cálido arena con acentos teal esmeralda — fresco y agradable
+// Paleta "corporativa / KPI dashboard": grises-azulados neutros como base,
+// azul como acento principal, verde/rojo para positivo/negativo (financiero),
+// y sombras planas y sutiles en vez del efecto neumórfico brillante anterior.
 const TEMA = {
   noche: {
-    bg:           "linear-gradient(145deg, #110d1a 0%, #160d22 50%, #0f0a18 100%)",
-    bgSolid:      "#110d1a",
-    bgSecundario: "#1a1228",
-    surface:      "rgba(28,18,44,0.88)",
-    surfaceSolid: "rgba(18,11,30,0.95)",
-    surfaceHover: "rgba(40,26,60,0.95)",
-    border:       "rgba(180,130,255,0.1)",
-    borderActivo: "rgba(220,100,255,0.5)",
-    texto:        "#f0e8ff",
-    textoSub:     "#c4aae8",
-    textoMuted:   "#7d5fa0",
-    textoMin:     "#3d2856",
-    acento:       "#d946ef",
-    acentoHover:  "#c026d3",
-    verde:        "#4ade80",
-    rojo:         "#fb7185",
-    amarillo:     "#fcd34d",
-    morado:       "#a78bfa",
-    naranja:      "#fb923c",
-    sombra:       "0 8px 32px rgba(0,0,0,0.7), 0 2px 8px rgba(100,0,150,0.2)",
-    sombraBtn:      "4px 4px 12px rgba(0,0,0,0.7), -2px -2px 6px rgba(180,100,255,0.06)",
-    sombraBtnActivo:"inset 3px 3px 8px rgba(0,0,0,0.75), inset -1px -1px 4px rgba(180,100,255,0.06)",
-    sombraBtnHover: "5px 5px 14px rgba(0,0,0,0.72), -2px -2px 6px rgba(180,100,255,0.08)",
-    glassBg:      "rgba(28,18,44,0.85)",
-    glassBlur:    "blur(18px)",
-    headerBg:     "rgba(16,10,26,0.92)",
+    bg:           "linear-gradient(160deg, #0b1220 0%, #0f1724 55%, #0b1220 100%)",
+    bgSolid:      "#0b1220",
+    bgSecundario: "#111a2b",
+    surface:      "rgba(19,28,45,0.92)",
+    surfaceSolid: "rgba(14,20,33,0.97)",
+    surfaceHover: "rgba(26,38,58,0.97)",
+    border:       "rgba(148,163,184,0.14)",
+    borderActivo: "rgba(59,130,246,0.55)",
+    texto:        "#e7ebf2",
+    textoSub:     "#b9c2d0",
+    textoMuted:   "#7c8aa0",
+    textoMin:     "#414d60",
+    acento:       "#3b82f6",
+    acentoHover:  "#2563eb",
+    verde:        "#22c55e",
+    rojo:         "#ef4444",
+    amarillo:     "#f59e0b",
+    morado:       "#6366f1",
+    naranja:      "#f97316",
+    sombra:       "0 4px 16px rgba(0,0,0,0.35)",
+    sombraBtn:      "0 1px 2px rgba(0,0,0,0.35)",
+    sombraBtnActivo:"inset 0 1px 3px rgba(0,0,0,0.5)",
+    sombraBtnHover: "0 3px 10px rgba(0,0,0,0.4)",
+    glassBg:      "rgba(19,28,45,0.86)",
+    glassBlur:    "blur(14px)",
+    headerBg:     "rgba(10,16,28,0.95)",
   },
   dia: {
-    bg:           "linear-gradient(145deg, #f5f0e8 0%, #ede6d8 50%, #f0ece2 100%)",
-    bgSolid:      "#ede6d8",
-    bgSecundario: "#f5f0e8",
-    surface:      "rgba(252,248,240,0.9)",
-    surfaceSolid: "rgba(235,228,214,0.95)",
-    surfaceHover: "rgba(255,253,248,0.98)",
-    border:       "rgba(255,255,255,0.95)",
-    borderActivo: "rgba(13,148,136,0.5)",
-    texto:        "#1c1917",
-    textoSub:     "#292524",
-    textoMuted:   "#78716c",
-    textoMin:     "#a8a29e",
-    acento:       "#0d9488",
-    acentoHover:  "#0f766e",
+    bg:           "linear-gradient(160deg, #f4f6f9 0%, #eef1f6 55%, #f4f6f9 100%)",
+    bgSolid:      "#eef1f6",
+    bgSecundario: "#f4f6f9",
+    surface:      "rgba(255,255,255,0.94)",
+    surfaceSolid: "rgba(255,255,255,0.98)",
+    surfaceHover: "rgba(248,250,252,0.98)",
+    border:       "rgba(15,23,42,0.09)",
+    borderActivo: "rgba(37,99,235,0.5)",
+    texto:        "#0f172a",
+    textoSub:     "#334155",
+    textoMuted:   "#64748b",
+    textoMin:     "#a0aec0",
+    acento:       "#2563eb",
+    acentoHover:  "#1d4ed8",
     verde:        "#16a34a",
     rojo:         "#dc2626",
-    amarillo:     "#b45309",
-    morado:       "#7c3aed",
+    amarillo:     "#d97706",
+    morado:       "#4f46e5",
     naranja:      "#ea580c",
-    sombra:       "8px 8px 20px rgba(180,160,120,0.5), -4px -4px 12px rgba(255,255,255,0.9)",
-    sombraBtn:      "5px 5px 13px rgba(180,160,120,0.5), -4px -4px 10px rgba(255,255,255,0.92)",
-    sombraBtnActivo:"inset 4px 4px 10px rgba(180,160,120,0.5), inset -2px -2px 6px rgba(255,255,255,0.88)",
-    sombraBtnHover: "7px 7px 18px rgba(180,160,120,0.55), -5px -5px 12px rgba(255,255,255,0.92)",
-    glassBg:      "rgba(252,248,240,0.85)",
-    glassBlur:    "blur(18px)",
-    headerBg:     "rgba(238,230,215,0.92)",
+    sombra:       "0 4px 14px rgba(15,23,42,0.08)",
+    sombraBtn:      "0 1px 3px rgba(15,23,42,0.10)",
+    sombraBtnActivo:"inset 0 1px 3px rgba(15,23,42,0.12)",
+    sombraBtnHover: "0 3px 10px rgba(15,23,42,0.12)",
+    glassBg:      "rgba(255,255,255,0.88)",
+    glassBlur:    "blur(14px)",
+    headerBg:     "rgba(255,255,255,0.96)",
   }
 };
 
@@ -811,28 +814,28 @@ export default function App() {
   };
 
   if(cargando) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"#d946ef",fontSize:14,gap:10,fontFamily:"system-ui",position:"relative"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"#3b82f6",fontSize:14,gap:10,fontFamily:"system-ui",position:"relative"}}>
       <FondoDinamico modoOscuro={modoOscuro} userId="cargando"/>
       <div style={{position:"relative",zIndex:10,display:"flex",flexDirection:"column",alignItems:"center",gap:14,
         background:"rgba(14,7,26,0.88)",backdropFilter:"blur(18px)",padding:"28px 36px",borderRadius:20,
-        border:"1px solid rgba(217,70,239,0.22)",boxShadow:"0 8px 32px rgba(0,0,0,0.7)"}}>
+        border:"1px solid rgba(59,130,246,0.22)",boxShadow:"0 8px 32px rgba(0,0,0,0.7)"}}>
         <style>{`@keyframes spinCaja{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`}</style>
         <div style={{position:"relative",width:54,height:54}}>
           <svg width="54" height="54" viewBox="0 0 54 54" style={{animation:"spinCaja 1.1s linear infinite"}}>
             <defs>
               <linearGradient id="spGrad" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#d946ef"/>
+                <stop offset="0%" stopColor="#3b82f6"/>
                 <stop offset="100%" stopColor="#7c3aed"/>
               </linearGradient>
             </defs>
-            <circle cx="27" cy="27" r="22" fill="none" stroke="rgba(217,70,239,0.12)" strokeWidth="4"/>
+            <circle cx="27" cy="27" r="22" fill="none" stroke="rgba(59,130,246,0.12)" strokeWidth="4"/>
             <path d="M27 5 A22 22 0 0 1 49 27" fill="none" stroke="url(#spGrad)" strokeWidth="4" strokeLinecap="round"/>
           </svg>
           <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <Icon name="box" size={20} color="#d946ef"/>
+            <Icon name="box" size={20} color="#3b82f6"/>
           </div>
         </div>
-        <span style={{color:"rgba(217,70,239,0.85)",fontWeight:700,letterSpacing:.5,fontSize:13}}>Cargando sistema...</span>
+        <span style={{color:"rgba(59,130,246,0.85)",fontWeight:700,letterSpacing:.5,fontSize:13}}>Cargando sistema...</span>
       </div>
     </div>
   );
@@ -880,7 +883,7 @@ export default function App() {
         .slide-in { animation: slideIn 0.18s ease forwards; }
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${modoOscuro?"rgba(180,100,255,0.25)":"rgba(13,148,136,0.3)"}; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: ${modoOscuro?"rgba(59,130,246,0.25)":"rgba(37,99,235,0.3)"}; border-radius: 3px; }
         .neo-btn { position:relative; overflow:hidden; transition: box-shadow 0.15s, transform 0.1s; }
         .neo-btn:active { transform: scale(0.97); }
         .neo-btn::after { content:''; position:absolute; border-radius:50%; background:rgba(255,255,255,0.15); width:100%; padding-top:100%; top:50%; left:50%; transform:translate(-50%,-50%) scale(0); animation: none; pointer-events:none; }
@@ -1001,8 +1004,8 @@ function Header({esAdmin,usuario,vista,setVista,alertas,modoOscuro,toggleModo,on
         {/* Logo + info */}
         <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
           <div style={{
-            background:modoOscuro?"rgba(217,70,239,0.1)":"rgba(13,148,136,0.1)",
-            border:`1.5px solid ${modoOscuro?"rgba(217,70,239,0.25)":"rgba(13,148,136,0.25)"}`,
+            background:modoOscuro?"rgba(59,130,246,0.1)":"rgba(37,99,235,0.1)",
+            border:`1.5px solid ${modoOscuro?"rgba(59,130,246,0.25)":"rgba(37,99,235,0.25)"}`,
             borderRadius:10,
             width:36,height:36,
             display:"flex",alignItems:"center",justifyContent:"center",
@@ -1031,8 +1034,8 @@ function Header({esAdmin,usuario,vista,setVista,alertas,modoOscuro,toggleModo,on
           {/* Toggle modo — solo icono, discreto */}
           <button className="neo-btn" onClick={()=>{ playSound("click"); toggleModo(); }} title={modoOscuro?"Modo día":"Modo noche"} style={{
             background:"transparent",
-            border:`1px solid ${modoOscuro?"rgba(217,70,239,0.2)":"rgba(13,148,136,0.2)"}`,
-            color:modoOscuro?"rgba(217,70,239,0.6)":"rgba(13,148,136,0.6)",
+            border:`1px solid ${modoOscuro?"rgba(59,130,246,0.2)":"rgba(37,99,235,0.2)"}`,
+            color:modoOscuro?"rgba(59,130,246,0.6)":"rgba(37,99,235,0.6)",
             width:30,height:30,borderRadius:8,
             cursor:"pointer",
             display:"flex",alignItems:"center",justifyContent:"center",
@@ -2092,7 +2095,9 @@ function FondoDinamico({modoOscuro, userId}){
   );
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none"}}>
+    // Fondo decorativo mucho más discreto (pedido explícito): opacidad baja y
+    // colores atenuados para que no compita con la información del dashboard.
+    <div style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none",opacity:0.22,filter:"saturate(0.6) grayscale(0.15)"}}>
       {layer(capas.a, aVisible)}
       {layer(capas.b, !aVisible)}
     </div>
@@ -2154,8 +2159,8 @@ function Login({onLogin, claves, estados, t, modoOscuro, toggleModo}){
     setTimeout(()=>{ onLogin({...USUARIOS_BASE[u],id:u}, modoGuardado); }, 800);
   };
 
-  const ac = modoOscuro ? "#d946ef" : "#0d9488";
-  const acH = modoOscuro ? "#c026d3" : "#0f766e";
+  const ac = modoOscuro ? "#3b82f6" : "#2563eb";
+  const acH = modoOscuro ? "#2563eb" : "#1d4ed8";
 
   return(
     <div style={{minHeight:"100vh",width:"100vw",overflow:"hidden",position:"relative",
@@ -2169,7 +2174,7 @@ function Login({onLogin, claves, estados, t, modoOscuro, toggleModo}){
         select { appearance:none; }
         @keyframes logoFlota{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-8px) rotate(1deg)}}
         @keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes loginPulse{0%,100%{box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 1px ${modoOscuro?"rgba(217,70,239,.22)":"rgba(13,148,136,.22)"};}50%{box-shadow:0 28px 70px rgba(0,0,0,.75),0 0 0 2px ${modoOscuro?"rgba(217,70,239,.38)":"rgba(13,148,136,.32)"},0 0 40px ${modoOscuro?"rgba(217,70,239,.15)":"rgba(13,148,136,.12)"};}}
+        @keyframes loginPulse{0%,100%{box-shadow:0 24px 60px rgba(0,0,0,.65),0 0 0 1px ${modoOscuro?"rgba(59,130,246,.22)":"rgba(37,99,235,.22)"};}50%{box-shadow:0 28px 70px rgba(0,0,0,.75),0 0 0 2px ${modoOscuro?"rgba(59,130,246,.38)":"rgba(37,99,235,.32)"},0 0 40px ${modoOscuro?"rgba(59,130,246,.15)":"rgba(37,99,235,.12)"};}}
         .neo-btn{position:relative;overflow:hidden;transition:box-shadow .15s,transform .1s;}
         .neo-btn:active{transform:scale(.97);}
         ::-webkit-scrollbar{width:0;}
@@ -2194,10 +2199,10 @@ function Login({onLogin, claves, estados, t, modoOscuro, toggleModo}){
           background:modoOscuro?"rgba(14,7,26,0.94)":"rgba(255,253,248,0.96)",
           backdropFilter:"blur(28px)",
           borderRadius:24,
-          border:`1px solid ${modoOscuro?"rgba(217,70,239,0.22)":"rgba(13,148,136,0.22)"}`,
+          border:`1px solid ${modoOscuro?"rgba(59,130,246,0.22)":"rgba(37,99,235,0.22)"}`,
           boxShadow:modoOscuro
-            ?"0 24px 60px rgba(0,0,0,0.75), 0 0 0 1px rgba(217,70,239,0.12)"
-            :"0 24px 60px rgba(0,0,0,0.22), 0 0 0 1px rgba(13,148,136,0.15)",
+            ?"0 24px 60px rgba(0,0,0,0.75), 0 0 0 1px rgba(59,130,246,0.12)"
+            :"0 24px 60px rgba(0,0,0,0.22), 0 0 0 1px rgba(37,99,235,0.15)",
           padding:"38px 34px 32px",
           textAlign:"center",
           animation:"loginPulse 4s ease-in-out infinite",
@@ -2206,18 +2211,18 @@ function Login({onLogin, claves, estados, t, modoOscuro, toggleModo}){
           <div style={{
             width:74,height:74,margin:"0 auto 18px",borderRadius:20,
             background:modoOscuro
-              ?"linear-gradient(135deg,rgba(217,70,239,0.18),rgba(124,58,237,0.18))"
-              :"linear-gradient(135deg,rgba(13,148,136,0.14),rgba(2,132,199,0.14))",
-            border:`2px solid ${modoOscuro?"rgba(217,70,239,0.38)":"rgba(13,148,136,0.32)"}`,
+              ?"linear-gradient(135deg,rgba(59,130,246,0.18),rgba(124,58,237,0.18))"
+              :"linear-gradient(135deg,rgba(37,99,235,0.14),rgba(2,132,199,0.14))",
+            border:`2px solid ${modoOscuro?"rgba(59,130,246,0.38)":"rgba(37,99,235,0.32)"}`,
             display:"flex",alignItems:"center",justifyContent:"center",
-            boxShadow:modoOscuro?"0 8px 28px rgba(217,70,239,0.28)":"0 8px 28px rgba(13,148,136,0.22)",
+            boxShadow:modoOscuro?"0 8px 28px rgba(59,130,246,0.28)":"0 8px 28px rgba(37,99,235,0.22)",
             animation:"logoFlota 3.8s ease-in-out infinite",
           }}>
             <svg width="40" height="40" viewBox="0 0 40 40">
               <defs>
                 <linearGradient id="lgMini" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={modoOscuro?"#f0abfc":"#5eead4"}/>
-                  <stop offset="100%" stopColor={modoOscuro?"#d946ef":"#0d9488"}/>
+                  <stop offset="100%" stopColor={modoOscuro?"#3b82f6":"#2563eb"}/>
                 </linearGradient>
               </defs>
               {/* Cristo mini — silueta clara */}
@@ -2254,10 +2259,10 @@ function Login({onLogin, claves, estados, t, modoOscuro, toggleModo}){
               onKeyDown={e=>e.key==="Enter"&&claveRef.current.focus()}
               style={{width:"100%",padding:"12px 14px",borderRadius:12,fontSize:14,
                 background:modoOscuro?"rgba(8,3,18,0.92)":"rgba(248,244,236,0.95)",
-                border:`1.5px solid ${modoOscuro?"rgba(217,70,239,0.28)":"rgba(13,148,136,0.28)"}`,
+                border:`1.5px solid ${modoOscuro?"rgba(59,130,246,0.28)":"rgba(37,99,235,0.28)"}`,
                 color:modoOscuro?"#f0e8ff":"#1c1917",cursor:"pointer",
                 boxShadow:modoOscuro
-                  ?"3px 3px 8px rgba(0,0,0,.6),-2px -2px 5px rgba(180,100,255,.04)"
+                  ?"3px 3px 8px rgba(0,0,0,.6),-2px -2px 5px rgba(59,130,246,.04)"
                   :"4px 4px 10px rgba(180,160,120,.4),-3px -3px 8px rgba(255,255,255,.85)"}}>
               <option value="">— Selecciona tu nombre —</option>
               {Object.entries(USUARIOS_BASE).map(([k,v])=>(
@@ -2275,10 +2280,10 @@ function Login({onLogin, claves, estados, t, modoOscuro, toggleModo}){
               onKeyDown={e=>e.key==="Enter"&&ingresar()}
               style={{width:"100%",padding:"12px 14px",borderRadius:12,fontSize:16,boxSizing:"border-box",
                 background:modoOscuro?"rgba(8,3,18,0.92)":"rgba(248,244,236,0.95)",
-                border:`1.5px solid ${modoOscuro?"rgba(217,70,239,0.28)":"rgba(13,148,136,0.28)"}`,
+                border:`1.5px solid ${modoOscuro?"rgba(59,130,246,0.28)":"rgba(37,99,235,0.28)"}`,
                 color:modoOscuro?"#f0e8ff":"#1c1917",
                 boxShadow:modoOscuro
-                  ?"3px 3px 8px rgba(0,0,0,.6),-2px -2px 5px rgba(180,100,255,.04)"
+                  ?"3px 3px 8px rgba(0,0,0,.6),-2px -2px 5px rgba(59,130,246,.04)"
                   :"4px 4px 10px rgba(180,160,120,.4),-3px -3px 8px rgba(255,255,255,.85)"}}/>
           </div>
 
@@ -2487,7 +2492,7 @@ function VistaRegistro({usuario,onRegistrar,registros,etiquetas,t,modoOscuro}){
           <div style={{...card(t),borderRadius:14,padding:"14px 18px",display:"flex",gap:0,alignItems:"stretch"}}>
             {/* Columna izquierda — lo mío */}
             <div style={{flex:1,display:"flex",alignItems:"center",gap:8}}>
-              <div style={{background:modoOscuro?"rgba(217,70,239,0.1)":"rgba(13,148,136,0.1)",borderRadius:10,padding:8,flexShrink:0}}>
+              <div style={{background:modoOscuro?"rgba(59,130,246,0.1)":"rgba(37,99,235,0.1)",borderRadius:10,padding:8,flexShrink:0}}>
                 <Icon name="user" size={16} color={t.acento}/>
               </div>
               <div>
@@ -2650,7 +2655,7 @@ function VistaRegistro({usuario,onRegistrar,registros,etiquetas,t,modoOscuro}){
           <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.8,marginBottom:12,display:"flex",alignItems:"center",gap:6,fontWeight:700}}>
             <Icon name="list" size={13} color={t.textoMuted}/>
             {usuario.id==="ivan"?"Todos los registros de hoy":"Mis registros de hoy"}
-            <span style={{marginLeft:"auto",background:modoOscuro?"rgba(217,70,239,0.1)":"rgba(13,148,136,0.1)",color:t.acento,borderRadius:8,padding:"1px 8px",fontSize:11,fontWeight:700}}>{regsVista.length}</span>
+            <span style={{marginLeft:"auto",background:modoOscuro?"rgba(59,130,246,0.1)":"rgba(37,99,235,0.1)",color:t.acento,borderRadius:8,padding:"1px 8px",fontSize:11,fontWeight:700}}>{regsVista.length}</span>
           </div>
           <div style={{maxHeight:320,overflowY:"auto",paddingRight:4}}>
           {regsVista.map(r=>(
@@ -3404,7 +3409,7 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:760,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{background:modoOscuro?"rgba(217,70,239,0.1)":"rgba(13,148,136,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
+        <div style={{background:modoOscuro?"rgba(59,130,246,0.1)":"rgba(37,99,235,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
           <Icon name="wallet" size={24} color={t.acento}/>
         </div>
         <div>
@@ -3707,7 +3712,7 @@ function VistaBonos({registros,t,modoOscuro}){
           <div key={e.nombre} style={{
             display:"flex",alignItems:"center",gap:10,padding:"9px 10px",
             borderRadius:10,marginBottom:4,
-            background:i<2&&e.ing>0?(modoOscuro?"rgba(217,70,239,0.06)":"rgba(13,148,136,0.05)"):"transparent",
+            background:i<2&&e.ing>0?(modoOscuro?"rgba(59,130,246,0.06)":"rgba(37,99,235,0.05)"):"transparent",
             border:`1px solid ${i<2&&e.ing>0?t.borderActivo:t.border}`,
             opacity:e.ing===0?0.35:1,
           }}>
@@ -3927,7 +3932,7 @@ function VistaConfig({modoOscuro,claves,onGuardarClaves,estados,onGuardarEstados
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:720,margin:"0 auto"}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{background:modoOscuro?"rgba(217,70,239,0.1)":"rgba(13,148,136,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
+        <div style={{background:modoOscuro?"rgba(59,130,246,0.1)":"rgba(37,99,235,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
           <Icon name="settings" size={24} color={t.acento}/>
         </div>
         <div>
@@ -3986,7 +3991,7 @@ function VistaCambiarClave({usuario, claves, onGuardar, t, modoOscuro, onVolver}
     <div style={{maxWidth:480,margin:"0 auto"}}>
       <div style={{...card(t),borderRadius:18,padding:"32px"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
-          <div style={{background:modoOscuro?"rgba(217,70,239,0.1)":"rgba(13,148,136,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
+          <div style={{background:modoOscuro?"rgba(59,130,246,0.1)":"rgba(37,99,235,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
             <Icon name="key" size={24} color={t.acento}/>
           </div>
           <div>
