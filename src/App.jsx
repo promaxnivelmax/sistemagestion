@@ -309,24 +309,58 @@ const dbSetConfig = async (key, value) => {
 // Alias para config
 const dbSet = dbSetConfig;
 
-// ── Finanzas personales de Iván (separadas del negocio) ───────────────────────
+// ── Patrimonio personal (Iván y Laura, separado del negocio) ──────────────────
+// Cada movimiento pertenece a una PERSONA y a una CARTERA (Efectivo, Nequi,
+// Bancolombia, Trii, etc). El saldo de cada cartera sale de sumar sus ingresos
+// y restar sus gastos — así se sabe cuánto hay en cada cuenta de cada quién.
 const dbGetFinanzasIvan = async () => {
   try {
     const { data, error } = await supabase.from("finanzas_ivan").select("*").order("fecha_iso", { ascending: false }).order("creado_en", { ascending: false });
     if (error || !data) return [];
-    return data.map(f => ({ id: f.id, tipo: f.tipo, categoria: f.categoria, monto: Number(f.monto), nota: f.nota||"", fechaISO: f.fecha_iso, titular: f.titular||null }));
+    return data.map(f => ({
+      id: f.id, tipo: f.tipo, categoria: f.categoria, monto: Number(f.monto), nota: f.nota||"", fechaISO: f.fecha_iso,
+      persona: f.titular || "ivan", // "titular" es el nombre viejo de la columna en la BD, se reusa como "persona"
+      cartera: f.cartera || "Efectivo",
+    }));
   } catch(e) { console.error("dbGetFinanzasIvan:", e); return []; }
 };
 const dbInsertFinanzaIvan = async (f) => {
   try {
     const { error } = await supabase.from("finanzas_ivan").insert({
-      id: f.id, tipo: f.tipo, categoria: f.categoria, monto: f.monto, nota: f.nota||"", fecha_iso: f.fechaISO, titular: f.titular||null,
+      id: f.id, tipo: f.tipo, categoria: f.categoria, monto: f.monto, nota: f.nota||"", fecha_iso: f.fechaISO,
+      titular: f.persona, cartera: f.cartera,
     });
     if (error) console.error("dbInsertFinanzaIvan:", error);
   } catch(e) { console.error("dbInsertFinanzaIvan:", e); }
 };
 const dbDeleteFinanzaIvan = async (id) => {
   try { await supabase.from("finanzas_ivan").delete().eq("id", id); } catch(e) {}
+};
+
+// ── Compromisos mensuales y deudas a plazo, personales (Iván / Laura) ─────────
+const dbGetCompromisosPersonales = async () => {
+  try {
+    const { data, error } = await supabase.from("compromisos_personales").select("*").order("creado_en", { ascending: true });
+    if (error || !data) return [];
+    return data.map(c => ({
+      id: c.id, persona: c.persona, tipo: c.tipo, nombre: c.nombre, dia: c.dia, valor: Number(c.valor||0),
+      cartera: c.cartera||"", nota: c.nota||"", pagado: !!c.pagado, pagadoMes: c.pagado_mes||null,
+      saldoPendiente: c.saldo_pendiente!=null ? Number(c.saldo_pendiente) : null,
+      valorTotal: c.valor_total!=null ? Number(c.valor_total) : null,
+    }));
+  } catch(e) { console.error("dbGetCompromisosPersonales:", e); return []; }
+};
+const dbUpsertCompromisoPersonal = async (c) => {
+  try {
+    await supabase.from("compromisos_personales").upsert({
+      id: c.id, persona: c.persona, tipo: c.tipo, nombre: c.nombre, dia: c.dia||null, valor: c.valor||0,
+      cartera: c.cartera||"", nota: c.nota||"", pagado: !!c.pagado, pagado_mes: c.pagadoMes||null,
+      saldo_pendiente: c.saldoPendiente, valor_total: c.valorTotal,
+    }, { onConflict: "id" });
+  } catch(e) { console.error("dbUpsertCompromisoPersonal:", e); }
+};
+const dbDeleteCompromisoPersonal = async (id) => {
+  try { await supabase.from("compromisos_personales").delete().eq("id", id); } catch(e) {}
 };
 
 // ─── ÍCONOS SVG ───────────────────────────────────────────────────────────────
@@ -555,6 +589,7 @@ export default function App() {
   const [registros,    setRegistros]    = useState([]);
   const [compromisos,  setCompromisos]  = useState([]);
   const [finanzasIvan, setFinanzasIvan] = useState([]);
+  const [compromisosPersonales, setCompromisosPersonales] = useState([]);
   const [vista,        setVista]        = useState("registro");
   const [modoOscuro,   setModoOscuro]   = useState(true);
   const [claves,       setClaves]       = useState(CLAVES_BASE);
@@ -803,10 +838,13 @@ export default function App() {
     dbDeleteRegistro(id);
   };
 
-  // ── Finanzas personales de Iván: solo se cargan si el usuario que entra es Iván ──
+  // ── Patrimonio personal: solo se carga si el usuario que entra es Iván (privado) ──
   useEffect(()=>{
     if(!usuario || usuario.id!=="ivan") return;
-    (async()=>{ setFinanzasIvan(await dbGetFinanzasIvan()); })();
+    (async()=>{
+      setFinanzasIvan(await dbGetFinanzasIvan());
+      setCompromisosPersonales(await dbGetCompromisosPersonales());
+    })();
   },[usuario]);
 
   const agregarFinanzaIvan = (f) => {
@@ -817,6 +855,16 @@ export default function App() {
   const eliminarFinanzaIvan = (id) => {
     setFinanzasIvan(prev => prev.filter(f=>f.id!==id));
     dbDeleteFinanzaIvan(id);
+  };
+
+  const guardarCompromisoPersonal = (c) => {
+    const esNuevo = !compromisosPersonales.some(x=>x.id===c.id);
+    setCompromisosPersonales(prev => esNuevo ? [...prev, c] : prev.map(x=>x.id===c.id?c:x));
+    dbUpsertCompromisoPersonal(c);
+  };
+  const eliminarCompromisoPersonal = (id) => {
+    setCompromisosPersonales(prev => prev.filter(c=>c.id!==id));
+    dbDeleteCompromisoPersonal(id);
   };
 
   if(cargando) return (
@@ -947,7 +995,7 @@ export default function App() {
           {vista==="config"      && esAdmin && <VistaConfig      modoOscuro={modoOscuro} claves={claves} onGuardarClaves={guardarClaves} estados={estados} onGuardarEstados={guardarEstados} etiquetas={etiquetas} onGuardarEtiquetas={guardarEtiquetas} t={t}/>}
           {vista==="clave"       && <VistaCambiarClave usuario={usuario} claves={claves} onGuardar={guardarClaves} t={t} modoOscuro={modoOscuro} onVolver={()=>setVista("registro")}/>}
           {vista==="ranking"     && !esAdmin && <VistaRankingEmpleado registros={registros} usuario={usuario} t={t} modoOscuro={modoOscuro}/>}
-          {vista==="finanzasivan"&& usuario.id==="ivan" && <VistaFinanzasIvan finanzas={finanzasIvan} onAgregar={agregarFinanzaIvan} onEliminar={eliminarFinanzaIvan} t={t} modoOscuro={modoOscuro}/>}
+          {vista==="finanzasivan"&& usuario.id==="ivan" && <VistaFinanzasIvan finanzas={finanzasIvan} onAgregar={agregarFinanzaIvan} onEliminar={eliminarFinanzaIvan} compromisosPersonales={compromisosPersonales} onGuardarCompromisoPersonal={guardarCompromisoPersonal} onEliminarCompromisoPersonal={eliminarCompromisoPersonal} t={t} modoOscuro={modoOscuro}/>}
         </div>
       </main>
 
@@ -985,7 +1033,7 @@ function Header({esAdmin,usuario,vista,setVista,alertas,modoOscuro,toggleModo,on
     {id:"historial",  icon:"list",      label:"Historial"},
     {id:"bonos",      icon:"trophy",    label:"Bonos"},
     {id:"compromisos",icon:"repeat",    label:"Compromisos", badge: alertas.length},
-    ...(usuario.id==="ivan" ? [{id:"finanzasivan", icon:"wallet", label:"Mi Caja"}] : []),
+    ...(usuario.id==="ivan" ? [{id:"finanzasivan", icon:"wallet", label:"Patrimonio"}] : []),
     {id:"config",     icon:"settings",  label:"Config"},
   ];
   const navItemsEmpleado = [
@@ -3342,124 +3390,181 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
   );
 }
 
-// ─── FINANZAS PERSONALES DE IVÁN (separadas del negocio) ──────────────────────
-// Modelo distinto al del negocio: acá no solo hay "ventas" y "gastos", sino
-// también "ahorro" (plata que se guarda/invierte, no se gasta), y el ahorro se
-// lleva por CUENTA y por TITULAR (Iván o Laura), porque el dinero de ambos se
-// guarda en efectivo y en cuentas separadas. Solo Iván ve esta pantalla.
-const CATS_FIN_ING    = ["Utilidad del negocio","Sueldo / trabajo independiente","Arriendo que recibo","Ventas personales","Regalo o ayuda","Otro ingreso"];
-const CATS_FIN_GASTO  = ["Vivienda / Arriendo","Comida","Servicios (luz, agua, gas, internet)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Deudas / Pagos","Otro gasto"];
-const esGasto = (f) => f.tipo==="gasto" || f.tipo==="egreso"; // "egreso" queda como alias por compatibilidad
+// ─── PATRIMONIO PERSONAL (Iván y Laura, separado del negocio) ─────────────────
+// Modelo tipo banco real: cada persona tiene varias CARTERAS (Efectivo, Nequi,
+// Bancolombia, Trii, etc). Cada movimiento (ingreso o gasto) se registra en una
+// cartera específica, así el saldo de cada cuenta siempre se sabe. También cada
+// persona puede tener compromisos mensuales (como arriendo) y deudas a plazo
+// (con cuotas), igual que el negocio pero por separado y privado — solo Iván
+// entra a esta pantalla.
+const PATR_PERSONAS = [{id:"ivan",nombre:"Iván"},{id:"laura",nombre:"Laura"}];
+const CATS_PATR_ING   = ["Utilidad del negocio","Sueldo / trabajo independiente","Arriendo que recibe","Ventas personales","Regalo o ayuda","Otro ingreso"];
+const CATS_PATR_GASTO = ["Vivienda / Arriendo","Comida","Servicios (luz, agua, gas, internet)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Otro gasto"];
 
-function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
-  const [tipo,setTipo]          = useState("ingreso");
-  const [categoria,setCategoria]= useState(CATS_FIN_ING[0]);
-  const [titular,setTitular]    = useState("Iván");
-  const [cuenta,setCuenta]      = useState("");
-  const [monto,setMonto]        = useState("");
-  const [nota,setNota]          = useState("");
-  const [periodo,setPeriodo]    = useState("mes");
-  const [simMonto,setSimMonto]  = useState("");
+function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonales, onGuardarCompromisoPersonal, onEliminarCompromisoPersonal, t, modoOscuro}){
+  const [personaSel,setPersonaSel] = useState("ivan");
+  const [tipo,setTipo]             = useState("ingreso");
+  const [cartera,setCartera]       = useState("");
+  const [categoria,setCategoria]   = useState(CATS_PATR_ING[0]);
+  const [monto,setMonto]           = useState("");
+  const [nota,setNota]             = useState("");
+  const [periodo,setPeriodo]       = useState("mes");
+  const [simCartera,setSimCartera] = useState("");
+  const [simMonto,setSimMonto]     = useState("");
+
+  // Formulario de compromiso mensual
+  const [cNombre,setCNombre] = useState(""); const [cDia,setCDia] = useState(1);
+  const [cValor,setCValor]   = useState("");  const [cCartera,setCCartera] = useState(""); const [cNota,setCNota] = useState("");
+  // Formulario de deuda a plazo
+  const [dNombre,setDNombre] = useState(""); const [dValorTotal,setDValorTotal] = useState(""); const [dCuota,setDCuota] = useState(""); const [dNota,setDNota] = useState("");
 
   const hoyISO = fechaISO();
+  const hoyNum = getLocalDate().getDate();
+  const mesActual = hoyISO.slice(0,7);
   const hace7  = getLocalDate(); hace7.setDate(hace7.getDate()-6);
   const hace30 = getLocalDate(); hace30.setDate(hace30.getDate()-29);
   const hace7ISO  = hace7.toISOString().slice(0,10);
   const hace30ISO = hace30.toISOString().slice(0,10);
 
-  const filtrar = (f) => {
+  const filtrarPeriodo = (f) => {
     if(periodo==="hoy")    return f.fechaISO===hoyISO;
     if(periodo==="semana") return f.fechaISO>=hace7ISO;
     if(periodo==="mes")    return f.fechaISO>=hace30ISO;
     return true;
   };
-  const vistas = finanzas.filter(filtrar);
-  const movsAhorro = finanzas.filter(f=>f.tipo==="ahorro"); // histórico completo, no depende del período
 
-  // Saldo por cuenta y por titular (histórico completo — es lo que hay HOY en cada cuenta)
-  const cuentasPorTitular = {};
-  movsAhorro.forEach(f=>{
-    const tit = f.titular || "Sin asignar";
-    const cta = f.categoria || "Sin nombre";
-    cuentasPorTitular[tit] = cuentasPorTitular[tit] || {};
-    cuentasPorTitular[tit][cta] = (cuentasPorTitular[tit][cta]||0) + f.monto;
-  });
-  const guardadoTotal = movsAhorro.reduce((a,b)=>a+b.monto,0);
-  const nombresCuentasPrevias = [...new Set(movsAhorro.filter(f=>f.titular===titular).map(f=>f.categoria))];
+  // ── Cálculos por persona: saldo de cada cartera y patrimonio neto ──────────
+  const calcularPersona = (pid) => {
+    const movs = finanzas.filter(f=>f.persona===pid);
+    const carteras = {};
+    movs.forEach(f=>{
+      const c = f.cartera || "Sin cartera";
+      carteras[c] = (carteras[c]||0) + (f.tipo==="ingreso" ? f.monto : -f.monto);
+    });
+    const patrimonioCarteras = Object.values(carteras).reduce((a,b)=>a+b,0);
+    const deudas = compromisosPersonales.filter(c=>c.persona===pid && c.tipo==="deuda");
+    const deudaPendiente = deudas.reduce((a,b)=>a+(b.saldoPendiente||0),0);
+    return { carteras, patrimonioCarteras, deudaPendiente, patrimonioNeto: patrimonioCarteras - deudaPendiente };
+  };
+  const calcIvan = calcularPersona("ivan");
+  const calcLaura = calcularPersona("laura");
+  const patrimonioFamiliar = calcIvan.patrimonioNeto + calcLaura.patrimonioNeto;
 
-  const ingPeriodo    = vistas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
-  const gastoPeriodo  = vistas.filter(esGasto).reduce((a,b)=>a+b.monto,0);
-  const ahorroPeriodo = vistas.filter(f=>f.tipo==="ahorro").reduce((a,b)=>a+b.monto,0);
-  const libre         = ingPeriodo - gastoPeriodo - ahorroPeriodo; // lo que no se ha comprometido en nada
+  const calcSel = personaSel==="ivan" ? calcIvan : calcLaura;
+  const nombresCarteras = Object.keys(calcSel.carteras);
+  const movsPersona = finanzas.filter(f=>f.persona===personaSel);
+  const vistas = movsPersona.filter(filtrarPeriodo);
+  const ingPeriodo   = vistas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
+  const gastoPeriodo = vistas.filter(f=>f.tipo==="gasto").reduce((a,b)=>a+b.monto,0);
+  const libre = ingPeriodo - gastoPeriodo;
+  const topGastos = Object.entries(vistas.filter(f=>f.tipo==="gasto").reduce((acc,f)=>{acc[f.categoria]=(acc[f.categoria]||0)+f.monto;return acc;},{})).sort((a,b)=>b[1]-a[1]);
 
-  const topGastos = Object.entries(vistas.filter(esGasto).reduce((acc,f)=>{acc[f.categoria]=(acc[f.categoria]||0)+f.monto;return acc;},{})).sort((a,b)=>b[1]-a[1]);
+  const compromisosPersona = compromisosPersonales.filter(c=>c.persona===personaSel && c.tipo==="mensual");
+  const deudasPersona      = compromisosPersonales.filter(c=>c.persona===personaSel && c.tipo==="deuda");
 
-  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(t2==="ingreso"?CATS_FIN_ING[0]:CATS_FIN_GASTO[0]); setCuenta(""); };
+  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(t2==="ingreso"?CATS_PATR_ING[0]:CATS_PATR_GASTO[0]); };
 
-  const agregar = () => {
-    const n = parseFloat(String(monto).replace(/[^0-9.\-]/g,""));
-    if(!n || (tipo!=="ahorro" && n<=0)) return;
-    if(tipo==="ahorro" && !cuenta.trim()) return;
-    playSound(tipo==="ingreso"?"ingreso_ok":tipo==="ahorro"?"success":"egreso_ok");
-    if(tipo==="ahorro"){
-      onAgregar({tipo, categoria:cuenta.trim(), titular, monto:n, nota:nota||""});
-      setCuenta("");
-    } else {
-      onAgregar({tipo, categoria, monto:n, nota:nota||""});
-    }
+  const agregarMov = () => {
+    const n = parseFloat(String(monto).replace(/[^0-9.]/g,""));
+    if(!n||n<=0||!cartera.trim()) return;
+    playSound(tipo==="ingreso"?"ingreso_ok":"egreso_ok");
+    onAgregar({tipo, persona:personaSel, cartera:cartera.trim(), categoria, monto:n, nota:nota||""});
     setMonto(""); setNota("");
   };
 
+  const agregarCompromiso = () => {
+    const n = parseFloat(String(cValor).replace(/[^0-9.]/g,""));
+    if(!cNombre.trim()||!n||n<=0) return;
+    playSound("success");
+    onGuardarCompromisoPersonal({ id:Date.now(), persona:personaSel, tipo:"mensual", nombre:cNombre.trim(), dia:cDia||1, valor:n, cartera:cCartera||"", nota:cNota||"", pagado:false, pagadoMes:null, saldoPendiente:null, valorTotal:null });
+    setCNombre(""); setCValor(""); setCCartera(""); setCNota(""); setCDia(1);
+  };
+  const marcarPagadoCompromiso = (c) => {
+    const yaPagado = c.pagado && c.pagadoMes===mesActual;
+    playSound(yaPagado?"click":"success");
+    onGuardarCompromisoPersonal({...c, pagado:!yaPagado, pagadoMes: !yaPagado?mesActual:null});
+  };
+
+  const agregarDeuda = () => {
+    const total = parseFloat(String(dValorTotal).replace(/[^0-9.]/g,""));
+    const cuota = parseFloat(String(dCuota).replace(/[^0-9.]/g,""));
+    if(!dNombre.trim()||!total||total<=0||!cuota||cuota<=0) return;
+    playSound("success");
+    onGuardarCompromisoPersonal({ id:Date.now(), persona:personaSel, tipo:"deuda", nombre:dNombre.trim(), dia:null, valor:cuota, cartera:"", nota:dNota||"", pagado:false, pagadoMes:null, saldoPendiente:total, valorTotal:total });
+    setDNombre(""); setDValorTotal(""); setDCuota(""); setDNota("");
+  };
+  const pagarCuotaDeuda = (d) => {
+    playSound("success");
+    const nuevoSaldo = Math.max(0, (d.saldoPendiente||0) - d.valor);
+    onGuardarCompromisoPersonal({...d, saldoPendiente:nuevoSaldo});
+  };
+
   const simN = parseFloat(String(simMonto).replace(/[^0-9.]/g,""))||0;
-  const simAlcanza = simN>0 && simN<=libre;
+  const saldoSimCartera = simCartera ? (calcSel.carteras[simCartera]||0) : 0;
+  const simAlcanza = simN>0 && simCartera && simN<=saldoSimCartera;
 
   const periodoLabel = {hoy:"hoy",semana:"últimos 7 días",mes:"últimos 30 días",todo:"siempre"}[periodo];
+  const colorPersona = (pid) => pid==="ivan" ? t.acento : t.morado;
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:760,margin:"0 auto"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:820,margin:"0 auto"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{background:modoOscuro?"rgba(59,130,246,0.1)":"rgba(37,99,235,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
           <Icon name="wallet" size={24} color={t.acento}/>
         </div>
         <div>
-          <div style={{fontWeight:800,fontSize:17,color:t.texto}}>Mis Finanzas Personales</div>
-          <div style={{color:t.textoMuted,fontSize:12}}>Privado — solo tú ves esto, ni Laura ni nadie más</div>
+          <div style={{fontWeight:800,fontSize:17,color:t.texto}}>Patrimonio</div>
+          <div style={{color:t.textoMuted,fontSize:12}}>Privado — separado del negocio, solo tú lo ves</div>
         </div>
       </div>
 
-      {/* Hero: lo guardado */}
-      <div style={{...card(t),borderRadius:16,padding:"22px",textAlign:"center",boxShadow:t.sombra,background:modoOscuro?"linear-gradient(145deg, rgba(167,139,250,0.08), rgba(28,18,44,0.6))":"linear-gradient(145deg, rgba(167,139,250,0.08), rgba(255,255,255,0.5))"}}>
-        <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Lo que hay guardado entre todas las cuentas</div>
-        <div style={{color:t.morado,fontWeight:800,fontSize:30,marginTop:6}}>{fmt(guardadoTotal)}</div>
-      </div>
-
-      {/* Desglose por titular y cuenta */}
-      {Object.keys(cuentasPorTitular).length>0 && (
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12}}>
-          {Object.entries(cuentasPorTitular).map(([tit,cuentasObj])=>{
-            const subtotal = Object.values(cuentasObj).reduce((a,b)=>a+b,0);
+      {/* Hero: patrimonio familiar */}
+      <div style={{...card(t),borderRadius:16,padding:"22px",textAlign:"center",boxShadow:t.sombra}}>
+        <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Patrimonio familiar (Iván + Laura, después de deudas)</div>
+        <div style={{color:patrimonioFamiliar>=0?t.verde:t.rojo,fontWeight:800,fontSize:30,marginTop:6}}>{fmt(patrimonioFamiliar)}</div>
+        <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:12,flexWrap:"wrap"}}>
+          {PATR_PERSONAS.map(p=>{
+            const c = p.id==="ivan"?calcIvan:calcLaura;
             return(
-              <div key={tit} style={{...card(t),borderRadius:14,padding:"14px 16px",borderTop:`3px solid ${tit==="Iván"?t.acento:t.morado}`}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <span style={{fontWeight:700,fontSize:13,color:t.texto}}>{tit}</span>
-                  <span style={{fontWeight:800,fontSize:14,color:tit==="Iván"?t.acento:t.morado}}>{fmt(subtotal)}</span>
-                </div>
-                {Object.entries(cuentasObj).map(([cta,val])=>(
-                  <div key={cta} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:12}}>
-                    <span style={{color:t.textoSub}}>{cta}</span>
-                    <span style={{color:t.textoMuted,fontWeight:600}}>{fmt(val)}</span>
-                  </div>
-                ))}
+              <div key={p.id} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",borderRadius:10,padding:"8px 16px",minWidth:140}}>
+                <div style={{fontSize:11,color:colorPersona(p.id),fontWeight:700}}>{p.nombre}</div>
+                <div style={{fontSize:15,fontWeight:800,color:t.texto}}>{fmt(c.patrimonioNeto)}</div>
               </div>
             );
           })}
         </div>
-      )}
+      </div>
+
+      {/* Selector de persona */}
+      <div style={{display:"flex",gap:8}}>
+        {PATR_PERSONAS.map(p=>(
+          <button key={p.id} className="neo-btn" style={{
+            flex:1,padding:"12px",borderRadius:12,cursor:"pointer",fontWeight:700,fontSize:14,
+            background:personaSel===p.id?(modoOscuro?`${colorPersona(p.id)}22`:`${colorPersona(p.id)}18`):t.surface,
+            border:`1.5px solid ${personaSel===p.id?colorPersona(p.id):t.border}`,
+            color:personaSel===p.id?colorPersona(p.id):t.textoMuted,
+          }} onClick={()=>{playSound("nav");setPersonaSel(p.id);setCartera("");setSimCartera("");}}>{p.nombre}</button>
+        ))}
+      </div>
+
+      {/* Carteras de la persona seleccionada */}
+      <div style={{...card(t),borderRadius:14,padding:"14px 16px"}}>
+        <div style={{fontWeight:700,fontSize:12,color:t.textoSub,marginBottom:10,textTransform:"uppercase",letterSpacing:.5}}>Carteras de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
+        {nombresCarteras.length===0 && <div style={{color:t.textoMin,fontSize:12}}>Aún no hay carteras — se crean solas cuando registras un movimiento con un nombre de cartera nuevo.</div>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+          {nombresCarteras.map(c=>(
+            <div key={c} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",border:`1px solid ${t.border}`,borderRadius:10,padding:"8px 14px",minWidth:130}}>
+              <div style={{fontSize:11,color:t.textoMuted}}>{c}</div>
+              <div style={{fontSize:14,fontWeight:800,color:calcSel.carteras[c]>=0?t.texto:t.rojo}}>{fmt(calcSel.carteras[c])}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
         {[["hoy","Hoy"],["semana","7 días"],["mes","30 días"],["todo","Todo"]].map(([k,l])=>(
           <button key={k} className="neo-btn" style={{
-            background: periodo===k?(modoOscuro?"rgba(56,189,248,0.12)":"rgba(2,132,199,0.1)"):t.surface,
+            background: periodo===k?(modoOscuro?"rgba(59,130,246,0.12)":"rgba(37,99,235,0.1)"):t.surface,
             border: `1px solid ${periodo===k?t.borderActivo:t.border}`,
             color: periodo===k?t.acento:t.textoMuted,
             padding:"7px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:periodo===k?700:500,
@@ -3470,10 +3575,9 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
         {[
-          {label:"Te entró",  val:fmt(ingPeriodo),    color:t.verde},
-          {label:"Gastaste",  val:fmt(gastoPeriodo),  color:t.rojo},
-          {label:"Guardaste", val:fmt(ahorroPeriodo), color:t.morado},
-          {label:"Te queda libre", val:fmt(libre),     color:libre>=0?t.amarillo:t.rojo},
+          {label:"Le entró",  val:fmt(ingPeriodo),   color:t.verde},
+          {label:"Gastó",     val:fmt(gastoPeriodo), color:t.rojo},
+          {label:"Le quedó libre", val:fmt(libre),    color:libre>=0?t.amarillo:t.rojo},
         ].map(k=>(
           <div key={k.label} style={{...card(t),borderRadius:14,padding:"16px",textAlign:"center"}}>
             <div style={{color:k.color,fontSize:17,fontWeight:800}}>{k.val}</div>
@@ -3482,108 +3586,144 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
         ))}
       </div>
 
-      {/* Cuánto puede invertir */}
-      <div style={{...card(t),borderRadius:16,padding:"18px 20px",borderLeft:`3px solid ${libre>0?t.verde:t.rojo}`}}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:t.textoSub,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:.5}}>
-          <Icon name="trending" size={15} color={libre>0?t.verde:t.rojo}/> ¿Cuánto puedo invertir?
-        </div>
-        {libre>0 ? (
-          <p style={{color:t.textoSub,fontSize:14,lineHeight:1.6,margin:0}}>
-            En {periodoLabel} te sobraron <b style={{color:t.verde}}>{fmt(libre)}</b> después de tus gastos y de lo que ya guardaste.
-            Esa plata está libre — la podrías destinar a una inversión o simplemente sumarla a tu ahorro.
-          </p>
-        ) : (
-          <p style={{color:t.textoSub,fontSize:14,lineHeight:1.6,margin:0}}>
-            En {periodoLabel} no te quedó nada libre para invertir — tus gastos y ahorros ya usaron todo lo que te entró
-            {libre<0 ? <> (te faltaron <b style={{color:t.rojo}}>{fmt(Math.abs(libre))}</b>)</> : null}.
-            Prueba mirando "Todo" o revisa en qué se te va la plata más abajo.
-          </p>
-        )}
-      </div>
-
-      {/* Simulador de compra */}
+      {/* Simulador por cartera */}
       <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
         <div style={{fontWeight:700,fontSize:13,marginBottom:10,color:t.textoSub,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:.5}}>
-          <Icon name="zap" size={14} color={t.acento}/> ¿Me alcanza para comprar algo?
+          <Icon name="zap" size={14} color={t.acento}/> ¿Alcanza en una cartera?
         </div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
-          <div style={{flex:1,minWidth:160}}>
-            <label style={labelStyle(t)}>Precio de lo que quieres comprar</label>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:150}}>
+            <label style={labelStyle(t)}>Cartera</label>
+            <select style={inputStyle(t,modoOscuro)} value={simCartera} onChange={e=>setSimCartera(e.target.value)}>
+              <option value="">Elige una cartera...</option>
+              {nombresCarteras.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={{flex:1,minWidth:150}}>
+            <label style={labelStyle(t)}>Precio a pagar</label>
             <input type="number" style={inputStyle(t,modoOscuro)} value={simMonto} onChange={e=>setSimMonto(e.target.value)} placeholder="Ej: 150000"/>
           </div>
         </div>
-        {simN>0 && (
+        {simN>0 && simCartera && (
           <div style={{marginTop:12,padding:"10px 14px",borderRadius:10,fontSize:13,fontWeight:600,
-            background:simAlcanza?"rgba(52,211,153,0.1)":"rgba(239,68,68,0.1)",
-            border:`1px solid ${simAlcanza?"rgba(52,211,153,0.3)":"rgba(239,68,68,0.3)"}`,
+            background:simAlcanza?"rgba(34,197,94,0.1)":"rgba(239,68,68,0.1)",
+            border:`1px solid ${simAlcanza?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)"}`,
             color:simAlcanza?t.verde:t.rojo,
           }}>
             {simAlcanza
-              ? `Sí te alcanza. Después de comprarlo te quedarían ${fmt(libre-simN)} libres (basado en "${periodoLabel}").`
-              : `Con lo libre de "${periodoLabel}" no te alcanza — te faltarían ${fmt(simN-libre)}. Ojo: esto no cuenta lo que ya tienes guardado (${fmt(guardadoTotal)}).`}
+              ? `Sí alcanza. En "${simCartera}" quedarían ${fmt(saldoSimCartera-simN)}.`
+              : `En "${simCartera}" hay ${fmt(saldoSimCartera)} — faltan ${fmt(simN-saldoSimCartera)}.`}
           </div>
         )}
       </div>
 
-      {/* Formulario nuevo movimiento */}
+      {/* Nuevo movimiento */}
       <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Nuevo movimiento personal</div>
-        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-          <button className="neo-btn" style={{flex:1,minWidth:90,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
-            background:tipo==="ingreso"?"rgba(52,211,153,0.12)":t.surface, border:`1.5px solid ${tipo==="ingreso"?"#34d399":t.border}`,color:tipo==="ingreso"?t.verde:t.textoMuted,
-          }} onClick={()=>cambiarTipo("ingreso")}>+ Me entró</button>
-          <button className="neo-btn" style={{flex:1,minWidth:90,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
-            background:tipo==="gasto"?"rgba(248,113,113,0.12)":t.surface, border:`1.5px solid ${tipo==="gasto"?"#f87171":t.border}`,color:tipo==="gasto"?t.rojo:t.textoMuted,
-          }} onClick={()=>cambiarTipo("gasto")}>- Gasté</button>
-          <button className="neo-btn" style={{flex:1,minWidth:90,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
-            background:tipo==="ahorro"?"rgba(167,139,250,0.15)":t.surface, border:`1.5px solid ${tipo==="ahorro"?"#a78bfa":t.border}`,color:tipo==="ahorro"?t.morado:t.textoMuted,
-          }} onClick={()=>cambiarTipo("ahorro")}>⬤ Cuenta / Ahorro</button>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Nuevo movimiento de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+            background:tipo==="ingreso"?"rgba(34,197,94,0.12)":t.surface, border:`1.5px solid ${tipo==="ingreso"?"#22c55e":t.border}`,color:tipo==="ingreso"?t.verde:t.textoMuted,
+          }} onClick={()=>cambiarTipo("ingreso")}>+ Ingreso</button>
+          <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+            background:tipo==="gasto"?"rgba(239,68,68,0.12)":t.surface, border:`1.5px solid ${tipo==="gasto"?"#ef4444":t.border}`,color:tipo==="gasto"?t.rojo:t.textoMuted,
+          }} onClick={()=>cambiarTipo("gasto")}>- Gasto</button>
         </div>
-
-        {tipo==="ahorro" ? (
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div>
-              <label style={labelStyle(t)}>¿De quién es esta plata?</label>
-              <select style={inputStyle(t,modoOscuro)} value={titular} onChange={e=>{setTitular(e.target.value);setCuenta("");}}>
-                <option value="Iván">Iván</option>
-                <option value="Laura">Laura</option>
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle(t)}>Nombre de la cuenta</label>
-              <input style={inputStyle(t,modoOscuro)} list="cuentas-previas" value={cuenta} onChange={e=>setCuenta(e.target.value)} placeholder="Ej: Efectivo, Bancolombia, Nequi..."/>
-              <datalist id="cuentas-previas">
-                {nombresCuentasPrevias.map(c=><option key={c} value={c}/>)}
-              </datalist>
-            </div>
-            <div style={{gridColumn:"1 / -1"}}>
-              <label style={labelStyle(t)}>Valor (si sacaste plata de esa cuenta, pon un número negativo, ej: -50000)</label>
-              <input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/>
-            </div>
-            <div style={{gridColumn:"1 / -1"}}><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Aporte de la quincena..."/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={labelStyle(t)}>{tipo==="ingreso"?"¿A qué cartera entra?":"¿De qué cartera sale?"}</label>
+            <input style={inputStyle(t,modoOscuro)} list={`carteras-${personaSel}`} value={cartera} onChange={e=>setCartera(e.target.value)} placeholder="Ej: Efectivo, Nequi, Bancolombia, Trii..."/>
+            <datalist id={`carteras-${personaSel}`}>
+              {nombresCarteras.map(c=><option key={c} value={c}/>)}
+            </datalist>
           </div>
-        ) : (
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div>
-              <label style={labelStyle(t)}>Categoría</label>
-              <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
-                {(tipo==="ingreso"?CATS_FIN_ING:CATS_FIN_GASTO).map(c=><option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
-            <div style={{gridColumn:"1 / -1"}}><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Mercado de la semana..."/></div>
+          <div>
+            <label style={labelStyle(t)}>Categoría</label>
+            <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
+              {(tipo==="ingreso"?CATS_PATR_ING:CATS_PATR_GASTO).map(c=><option key={c}>{c}</option>)}
+            </select>
           </div>
-        )}
-
-        <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"10px 24px",marginTop:14}} onClick={agregar}>
+          <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
+          <div><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Mercado semana..."/></div>
+        </div>
+        <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"10px 24px",marginTop:14}} onClick={agregarMov}>
           <Icon name="check" size={15}/> Guardar
         </button>
       </div>
 
-      {/* Top gastos personales del período */}
+      {/* Compromisos mensuales */}
+      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Compromisos mensuales de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
+        {compromisosPersona.length===0 && <div style={{color:t.textoMin,fontSize:13,marginBottom:10}}>Sin compromisos registrados.</div>}
+        {compromisosPersona.map(c=>{
+          const pagadoEsteMes = c.pagado && c.pagadoMes===mesActual;
+          const dias = (()=>{ const d=c.dia-hoyNum; return d<0?d+30:d; })();
+          return(
+            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:8,flexWrap:"wrap",
+              background:pagadoEsteMes?"rgba(34,197,94,0.08)":(dias<=2?"rgba(239,68,68,0.08)":modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"),
+              border:`1px solid ${pagadoEsteMes?"rgba(34,197,94,0.3)":t.border}`}}>
+              <div style={{flex:1,minWidth:120}}>
+                <div style={{fontWeight:700,fontSize:13,color:t.texto,textDecoration:pagadoEsteMes?"line-through":"none"}}>{c.nombre}</div>
+                <div style={{fontSize:11,color:t.textoMuted}}>Día {c.dia}{c.cartera?` · ${c.cartera}`:""}{c.nota?` · ${c.nota}`:""}</div>
+              </div>
+              <div style={{fontWeight:800,color:pagadoEsteMes?t.verde:t.rojo}}>{fmt(c.valor)}</div>
+              <button className="neo-btn" style={{
+                background:pagadoEsteMes?"rgba(34,197,94,0.18)":(modoOscuro?"rgba(255,255,255,0.05)":"rgba(0,0,0,0.05)"),
+                border:`1.5px solid ${pagadoEsteMes?"#22c55e":t.border}`,color:pagadoEsteMes?"#22c55e":t.textoMuted,
+                padding:"5px 10px",borderRadius:6,cursor:"pointer",
+              }} onClick={()=>marcarPagadoCompromiso(c)}><Icon name="check" size={13} color={pagadoEsteMes?"#22c55e":t.textoMuted}/></button>
+              <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"5px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminarCompromisoPersonal(c.id)}><Icon name="trash" size={11}/></button>
+            </div>
+          );
+        })}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+          <input style={inputStyle(t,modoOscuro)} value={cNombre} onChange={e=>setCNombre(e.target.value)} placeholder="Nombre (ej: Arriendo)"/>
+          <input type="number" style={inputStyle(t,modoOscuro)} value={cDia} onChange={e=>setCDia(parseInt(e.target.value)||1)} placeholder="Día del mes" min="1" max="31"/>
+          <input type="number" style={inputStyle(t,modoOscuro)} value={cValor} onChange={e=>setCValor(e.target.value)} placeholder="Valor"/>
+          <input style={inputStyle(t,modoOscuro)} value={cCartera} onChange={e=>setCCartera(e.target.value)} placeholder="Cartera de pago (opcional)"/>
+        </div>
+        <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),marginTop:8}} onClick={agregarCompromiso}><Icon name="plus" size={13}/> Agregar compromiso</button>
+      </div>
+
+      {/* Deudas a plazo */}
+      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Deudas a plazo de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
+        {deudasPersona.length===0 && <div style={{color:t.textoMin,fontSize:13,marginBottom:10}}>Sin deudas registradas.</div>}
+        {deudasPersona.map(d=>{
+          const liquidada = (d.saldoPendiente||0)<=0;
+          return(
+            <div key={d.id} style={{padding:"10px 12px",borderRadius:10,marginBottom:8,
+              background:liquidada?"rgba(34,197,94,0.08)":(modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"),
+              border:`1px solid ${liquidada?"rgba(34,197,94,0.3)":t.border}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:13,color:t.texto}}>{d.nombre} {liquidada && <span style={{color:t.verde,fontSize:11}}>· Pagada</span>}</div>
+                  <div style={{fontSize:11,color:t.textoMuted}}>Cuota {fmt(d.valor)} · Total {fmt(d.valorTotal)}{d.nota?` · ${d.nota}`:""}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontWeight:800,color:liquidada?t.verde:t.rojo}}>{fmt(d.saldoPendiente)}</div>
+                  <div style={{fontSize:10,color:t.textoMuted}}>pendiente</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:8}}>
+                {!liquidada && <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),padding:"5px 12px",fontSize:12}} onClick={()=>pagarCuotaDeuda(d)}>Pagar cuota ({fmt(d.valor)})</button>}
+                <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"5px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminarCompromisoPersonal(d.id)}><Icon name="trash" size={11}/></button>
+              </div>
+            </div>
+          );
+        })}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+          <input style={{...inputStyle(t,modoOscuro),gridColumn:"1 / -1"}} value={dNombre} onChange={e=>setDNombre(e.target.value)} placeholder="Nombre de la deuda (ej: Préstamo moto)"/>
+          <input type="number" style={inputStyle(t,modoOscuro)} value={dValorTotal} onChange={e=>setDValorTotal(e.target.value)} placeholder="Valor total de la deuda"/>
+          <input type="number" style={inputStyle(t,modoOscuro)} value={dCuota} onChange={e=>setDCuota(e.target.value)} placeholder="Valor de cada cuota"/>
+          <input style={{...inputStyle(t,modoOscuro),gridColumn:"1 / -1"}} value={dNota} onChange={e=>setDNota(e.target.value)} placeholder="Nota (opcional)"/>
+        </div>
+        <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),marginTop:8}} onClick={agregarDeuda}><Icon name="plus" size={13}/> Agregar deuda</button>
+      </div>
+
+      {/* Top gastos */}
       {topGastos.length>0 && (
         <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>En qué se te va la plata</div>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>En qué se le va la plata a {PATR_PERSONAS.find(p=>p.id===personaSel).nombre}</div>
           {topGastos.map(([cat,val])=>(
             <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.2)"}`}}>
               <span style={{color:t.textoSub,fontSize:13}}>{cat}</span>
@@ -3595,24 +3735,18 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
 
       {/* Historial */}
       <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
-        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Movimientos ({vistas.length})</div>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Movimientos de {PATR_PERSONAS.find(p=>p.id===personaSel).nombre} ({vistas.length})</div>
         {vistas.length===0 && <div style={{color:t.textoMin,textAlign:"center",padding:24,fontSize:13}}>Sin movimientos en este período.</div>}
         <div style={{maxHeight:400,overflowY:"auto"}}>
-          {vistas.map(f=>{
-            const gasto = esGasto(f);
-            const color = f.tipo==="ingreso"?t.verde:f.tipo==="ahorro"?t.morado:t.rojo;
-            const icono = f.tipo==="ingreso"?"arrow_up":f.tipo==="ahorro"?"lock":"arrow_down";
-            const etiqueta = f.tipo==="ahorro" ? `${f.titular||"Sin asignar"} · ${f.categoria}` : f.categoria;
-            return(
-              <div key={f.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:13,flexWrap:"wrap"}}>
-                <Icon name={icono} size={13} color={color}/>
-                <span style={{flex:1,color:t.textoSub,minWidth:140}}>{etiqueta}{f.nota?` · ${f.nota}`:""}</span>
-                <span style={{color:f.monto<0?t.rojo:color,fontWeight:700}}>{gasto?"-":""}{fmt(f.monto)}</span>
-                <span style={{color:t.textoMin,fontSize:11}}>{f.fechaISO}</span>
-                <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminar(f.id)}><Icon name="trash" size={11}/></button>
-              </div>
-            );
-          })}
+          {vistas.map(f=>(
+            <div key={f.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:13,flexWrap:"wrap"}}>
+              <Icon name={f.tipo==="ingreso"?"arrow_up":"arrow_down"} size={13} color={f.tipo==="ingreso"?t.verde:t.rojo}/>
+              <span style={{flex:1,color:t.textoSub,minWidth:140}}>{f.categoria} · <b>{f.cartera}</b>{f.nota?` · ${f.nota}`:""}</span>
+              <span style={{color:f.tipo==="ingreso"?t.verde:t.rojo,fontWeight:700}}>{f.tipo==="gasto"?"-":""}{fmt(f.monto)}</span>
+              <span style={{color:t.textoMin,fontSize:11}}>{f.fechaISO}</span>
+              <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminar(f.id)}><Icon name="trash" size={11}/></button>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -4214,7 +4348,7 @@ function BottomNav({esAdmin, usuario, vista, setVista, alertas, t, modoOscuro}) 
     {id:"historial",  icon:"list",      label:"Historial"},
     {id:"bonos",      icon:"trophy",    label:"Bonos"},
     {id:"compromisos",icon:"repeat",    label:"Compromisos", badge: alertas.length},
-    ...(usuario?.id==="ivan" ? [{id:"finanzasivan", icon:"wallet", label:"Mi Caja"}] : []),
+    ...(usuario?.id==="ivan" ? [{id:"finanzasivan", icon:"wallet", label:"Patrimonio"}] : []),
     {id:"config",     icon:"settings",  label:"Config"},
   ];
   const navItemsEmpleado = [
