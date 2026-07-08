@@ -3329,15 +3329,21 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
 }
 
 // ─── FINANZAS PERSONALES DE IVÁN (separadas del negocio) ──────────────────────
-const CATS_FIN_IVAN_ING = ["Utilidad/pago del negocio","Otro ingreso personal"];
-const CATS_FIN_IVAN_EGR = ["Arriendo / Vivienda","Comida","Servicios (luz, agua, gas)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Ahorro / Patrimonio","Cuenta / Tarjeta","Otro gasto personal"];
+// Modelo distinto al del negocio: acá no solo hay "ventas" y "gastos", sino
+// también "ahorro" (plata que se guarda/invierte, no se gasta). Así se puede
+// ver de verdad el patrimonio guardado y cuánto queda libre para gastar o invertir.
+const CATS_FIN_ING    = ["Utilidad del negocio","Sueldo / trabajo independiente","Arriendo que recibo","Ventas personales","Regalo o ayuda","Otro ingreso"];
+const CATS_FIN_GASTO  = ["Vivienda / Arriendo","Comida","Servicios (luz, agua, gas, internet)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Deudas / Pagos","Otro gasto"];
+const CATS_FIN_AHORRO = ["Cuenta bancaria","Efectivo guardado","Inversión","Cartera / Fondo","Otro ahorro"];
+const esGasto = (f) => f.tipo==="gasto" || f.tipo==="egreso"; // "egreso" queda como alias por compatibilidad
 
 function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
-  const [tipo,setTipo]         = useState("ingreso");
-  const [categoria,setCategoria]= useState(CATS_FIN_IVAN_ING[0]);
-  const [monto,setMonto]       = useState("");
-  const [nota,setNota]         = useState("");
-  const [periodo,setPeriodo]   = useState("mes");
+  const [tipo,setTipo]          = useState("ingreso");
+  const [categoria,setCategoria]= useState(CATS_FIN_ING[0]);
+  const [monto,setMonto]        = useState("");
+  const [nota,setNota]          = useState("");
+  const [periodo,setPeriodo]    = useState("mes");
+  const [simMonto,setSimMonto]  = useState("");
 
   const hoyISO = fechaISO();
   const hace7  = getLocalDate(); hace7.setDate(hace7.getDate()-6);
@@ -3352,22 +3358,33 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
     return true;
   };
   const vistas = finanzas.filter(filtrar);
-  const totalIng = vistas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
-  const totalEgr = vistas.filter(f=>f.tipo==="egreso").reduce((a,b)=>a+b.monto,0);
-  const saldo = totalIng - totalEgr;
-  const patrimonioTotal = finanzas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0) - finanzas.filter(f=>f.tipo==="egreso").reduce((a,b)=>a+b.monto,0);
 
-  const topGastos = Object.entries(vistas.filter(f=>f.tipo==="egreso").reduce((acc,f)=>{acc[f.categoria]=(acc[f.categoria]||0)+f.monto;return acc;},{})).sort((a,b)=>b[1]-a[1]);
+  // Lo guardado es histórico completo (no depende del período que estés mirando)
+  const guardadoTotal = finanzas.filter(f=>f.tipo==="ahorro").reduce((a,b)=>a+b.monto,0);
+
+  const ingPeriodo    = vistas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
+  const gastoPeriodo  = vistas.filter(esGasto).reduce((a,b)=>a+b.monto,0);
+  const ahorroPeriodo = vistas.filter(f=>f.tipo==="ahorro").reduce((a,b)=>a+b.monto,0);
+  const libre         = ingPeriodo - gastoPeriodo - ahorroPeriodo; // lo que no se ha comprometido en nada
+
+  const topGastos = Object.entries(vistas.filter(esGasto).reduce((acc,f)=>{acc[f.categoria]=(acc[f.categoria]||0)+f.monto;return acc;},{})).sort((a,b)=>b[1]-a[1]);
+
+  const catsDe = (t2) => t2==="ingreso" ? CATS_FIN_ING : t2==="ahorro" ? CATS_FIN_AHORRO : CATS_FIN_GASTO;
 
   const agregar = () => {
     const n = parseFloat(String(monto).replace(/[^0-9.]/g,""));
     if(!n||n<=0) return;
-    playSound(tipo==="ingreso"?"ingreso_ok":"egreso_ok");
+    playSound(tipo==="ingreso"?"ingreso_ok":tipo==="ahorro"?"success":"egreso_ok");
     onAgregar({tipo, categoria, monto:n, nota:nota||""});
     setMonto(""); setNota("");
   };
 
-  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(t2==="ingreso"?CATS_FIN_IVAN_ING[0]:CATS_FIN_IVAN_EGR[0]); };
+  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(catsDe(t2)[0]); };
+
+  const simN = parseFloat(String(simMonto).replace(/[^0-9.]/g,""))||0;
+  const simAlcanza = simN>0 && simN<=libre;
+
+  const periodoLabel = {hoy:"hoy",semana:"últimos 7 días",mes:"últimos 30 días",todo:"siempre"}[periodo];
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:760,margin:"0 auto"}}>
@@ -3376,14 +3393,15 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
           <Icon name="wallet" size={24} color={t.acento}/>
         </div>
         <div>
-          <div style={{fontWeight:800,fontSize:17,color:t.texto}}>Mi Caja Personal</div>
-          <div style={{color:t.textoMuted,fontSize:12}}>Tus finanzas separadas del negocio — solo las ves tú</div>
+          <div style={{fontWeight:800,fontSize:17,color:t.texto}}>Mis Finanzas Personales</div>
+          <div style={{color:t.textoMuted,fontSize:12}}>Separado del negocio · acepta ingresos de cualquier fuente</div>
         </div>
       </div>
 
-      <div style={{...card(t),borderRadius:14,padding:"16px",textAlign:"center",boxShadow:t.sombra}}>
-        <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Tu patrimonio acumulado (histórico completo)</div>
-        <div style={{color:patrimonioTotal>=0?t.verde:t.rojo,fontWeight:800,fontSize:26,marginTop:4}}>{fmt(patrimonioTotal)}</div>
+      {/* Hero: lo guardado */}
+      <div style={{...card(t),borderRadius:16,padding:"22px",textAlign:"center",boxShadow:t.sombra,background:modoOscuro?"linear-gradient(145deg, rgba(167,139,250,0.08), rgba(28,18,44,0.6))":"linear-gradient(145deg, rgba(167,139,250,0.08), rgba(255,255,255,0.5))"}}>
+        <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Lo que tienes guardado (cuentas, efectivo, inversiones)</div>
+        <div style={{color:t.morado,fontWeight:800,fontSize:30,marginTop:6}}>{fmt(guardadoTotal)}</div>
       </div>
 
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -3400,33 +3418,80 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
         {[
-          {label:"Ingresó",  val:fmt(totalIng), color:t.verde},
-          {label:"Gastó",    val:fmt(totalEgr), color:t.rojo},
-          {label:"Saldo del período", val:fmt(saldo), color:saldo>=0?t.amarillo:t.rojo},
+          {label:"Te entró",  val:fmt(ingPeriodo),    color:t.verde},
+          {label:"Gastaste",  val:fmt(gastoPeriodo),  color:t.rojo},
+          {label:"Guardaste", val:fmt(ahorroPeriodo), color:t.morado},
+          {label:"Te queda libre", val:fmt(libre),     color:libre>=0?t.amarillo:t.rojo},
         ].map(k=>(
           <div key={k.label} style={{...card(t),borderRadius:14,padding:"16px",textAlign:"center"}}>
-            <div style={{color:k.color,fontSize:18,fontWeight:800}}>{k.val}</div>
+            <div style={{color:k.color,fontSize:17,fontWeight:800}}>{k.val}</div>
             <div style={{color:t.textoMuted,fontSize:11,marginTop:4,textTransform:"uppercase",letterSpacing:.5}}>{k.label}</div>
           </div>
         ))}
       </div>
 
+      {/* Cuánto puede invertir */}
+      <div style={{...card(t),borderRadius:16,padding:"18px 20px",borderLeft:`3px solid ${libre>0?t.verde:t.rojo}`}}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:8,color:t.textoSub,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:.5}}>
+          <Icon name="trending" size={15} color={libre>0?t.verde:t.rojo}/> ¿Cuánto puedo invertir?
+        </div>
+        {libre>0 ? (
+          <p style={{color:t.textoSub,fontSize:14,lineHeight:1.6,margin:0}}>
+            En {periodoLabel} te sobraron <b style={{color:t.verde}}>{fmt(libre)}</b> después de tus gastos y de lo que ya guardaste.
+            Esa plata está libre — la podrías destinar a una inversión o simplemente sumarla a tu ahorro.
+          </p>
+        ) : (
+          <p style={{color:t.textoSub,fontSize:14,lineHeight:1.6,margin:0}}>
+            En {periodoLabel} no te quedó nada libre para invertir — tus gastos y ahorros ya usaron todo lo que te entró
+            {libre<0 ? <> (te faltaron <b style={{color:t.rojo}}>{fmt(Math.abs(libre))}</b>)</> : null}.
+            Prueba mirando "Todo" o revisa en qué se te va la plata más abajo.
+          </p>
+        )}
+      </div>
+
+      {/* Simulador de compra */}
+      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:10,color:t.textoSub,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:.5}}>
+          <Icon name="zap" size={14} color={t.acento}/> ¿Me alcanza para comprar algo?
+        </div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div style={{flex:1,minWidth:160}}>
+            <label style={labelStyle(t)}>Precio de lo que quieres comprar</label>
+            <input type="number" style={inputStyle(t,modoOscuro)} value={simMonto} onChange={e=>setSimMonto(e.target.value)} placeholder="Ej: 150000"/>
+          </div>
+        </div>
+        {simN>0 && (
+          <div style={{marginTop:12,padding:"10px 14px",borderRadius:10,fontSize:13,fontWeight:600,
+            background:simAlcanza?"rgba(52,211,153,0.1)":"rgba(239,68,68,0.1)",
+            border:`1px solid ${simAlcanza?"rgba(52,211,153,0.3)":"rgba(239,68,68,0.3)"}`,
+            color:simAlcanza?t.verde:t.rojo,
+          }}>
+            {simAlcanza
+              ? `Sí te alcanza. Después de comprarlo te quedarían ${fmt(libre-simN)} libres (basado en "${periodoLabel}").`
+              : `Con lo libre de "${periodoLabel}" no te alcanza — te faltarían ${fmt(simN-libre)}. Ojo: esto no cuenta lo que ya tienes guardado (${fmt(guardadoTotal)}).`}
+          </div>
+        )}
+      </div>
+
       {/* Formulario nuevo movimiento */}
       <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
         <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Nuevo movimiento personal</div>
-        <div style={{display:"flex",gap:8,marginBottom:12}}>
-          <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          <button className="neo-btn" style={{flex:1,minWidth:90,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
             background:tipo==="ingreso"?"rgba(52,211,153,0.12)":t.surface, border:`1.5px solid ${tipo==="ingreso"?"#34d399":t.border}`,color:tipo==="ingreso"?t.verde:t.textoMuted,
-          }} onClick={()=>cambiarTipo("ingreso")}>+ Ingreso</button>
-          <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
-            background:tipo==="egreso"?"rgba(248,113,113,0.12)":t.surface, border:`1.5px solid ${tipo==="egreso"?"#f87171":t.border}`,color:tipo==="egreso"?t.rojo:t.textoMuted,
-          }} onClick={()=>cambiarTipo("egreso")}>- Gasto</button>
+          }} onClick={()=>cambiarTipo("ingreso")}>+ Me entró</button>
+          <button className="neo-btn" style={{flex:1,minWidth:90,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+            background:tipo==="gasto"?"rgba(248,113,113,0.12)":t.surface, border:`1.5px solid ${tipo==="gasto"?"#f87171":t.border}`,color:tipo==="gasto"?t.rojo:t.textoMuted,
+          }} onClick={()=>cambiarTipo("gasto")}>- Gasté</button>
+          <button className="neo-btn" style={{flex:1,minWidth:90,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+            background:tipo==="ahorro"?"rgba(167,139,250,0.15)":t.surface, border:`1.5px solid ${tipo==="ahorro"?"#a78bfa":t.border}`,color:tipo==="ahorro"?t.morado:t.textoMuted,
+          }} onClick={()=>cambiarTipo("ahorro")}>⬤ Guardé</button>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div>
             <label style={labelStyle(t)}>Categoría</label>
             <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
-              {(tipo==="ingreso"?CATS_FIN_IVAN_ING:CATS_FIN_IVAN_EGR).map(c=><option key={c}>{c}</option>)}
+              {catsDe(tipo).map(c=><option key={c}>{c}</option>)}
             </select>
           </div>
           <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
@@ -3455,15 +3520,20 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
         <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Movimientos ({vistas.length})</div>
         {vistas.length===0 && <div style={{color:t.textoMin,textAlign:"center",padding:24,fontSize:13}}>Sin movimientos en este período.</div>}
         <div style={{maxHeight:400,overflowY:"auto"}}>
-          {vistas.map(f=>(
-            <div key={f.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:13,flexWrap:"wrap"}}>
-              <Icon name={f.tipo==="ingreso"?"arrow_up":"arrow_down"} size={13} color={f.tipo==="ingreso"?t.verde:t.rojo}/>
-              <span style={{flex:1,color:t.textoSub,minWidth:140}}>{f.categoria}{f.nota?` · ${f.nota}`:""}</span>
-              <span style={{color:f.tipo==="ingreso"?t.verde:t.rojo,fontWeight:700}}>{f.tipo==="egreso"?"-":""}{fmt(f.monto)}</span>
-              <span style={{color:t.textoMin,fontSize:11}}>{f.fechaISO}</span>
-              <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminar(f.id)}><Icon name="trash" size={11}/></button>
-            </div>
-          ))}
+          {vistas.map(f=>{
+            const gasto = esGasto(f);
+            const color = f.tipo==="ingreso"?t.verde:f.tipo==="ahorro"?t.morado:t.rojo;
+            const icono = f.tipo==="ingreso"?"arrow_up":f.tipo==="ahorro"?"lock":"arrow_down";
+            return(
+              <div key={f.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:13,flexWrap:"wrap"}}>
+                <Icon name={icono} size={13} color={color}/>
+                <span style={{flex:1,color:t.textoSub,minWidth:140}}>{f.categoria}{f.nota?` · ${f.nota}`:""}</span>
+                <span style={{color,fontWeight:700}}>{gasto?"-":f.tipo==="ahorro"?"→ ":""}{fmt(f.monto)}</span>
+                <span style={{color:t.textoMin,fontSize:11}}>{f.fechaISO}</span>
+                <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminar(f.id)}><Icon name="trash" size={11}/></button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
