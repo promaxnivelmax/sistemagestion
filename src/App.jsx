@@ -591,6 +591,7 @@ export default function App() {
   const [finanzasIvan, setFinanzasIvan] = useState([]);
   const [compromisosPersonales, setCompromisosPersonales] = useState([]);
   const [carterasPatrimonio, setCarterasPatrimonio] = useState({ivan:[],laura:[]});
+  const [categoriasPatrimonio, setCategoriasPatrimonio] = useState(null); // null = usar los defaults hasta que cargue de Supabase
   const [vista,        setVista]        = useState("registro");
   const [modoOscuro,   setModoOscuro]   = useState(true);
   const [claves,       setClaves]       = useState(CLAVES_BASE);
@@ -847,10 +848,14 @@ export default function App() {
       setCompromisosPersonales(await dbGetCompromisosPersonales());
       const cp = await dbGetConfig("carteras_patrimonio_v1");
       if(cp) { try { const parsed = JSON.parse(cp); setCarterasPatrimonio({ivan:parsed.ivan||[], laura:parsed.laura||[]}); } catch(e){} }
+      const catp = await dbGetConfig("categorias_patrimonio_v1");
+      if(catp) { try { const parsed = JSON.parse(catp); setCategoriasPatrimonio({ingreso:parsed.ingreso?.length?parsed.ingreso:CATS_PATR_ING, egreso:parsed.egreso?.length?parsed.egreso:CATS_PATR_GASTO}); } catch(e){} }
+      else setCategoriasPatrimonio({ingreso:CATS_PATR_ING, egreso:CATS_PATR_GASTO});
     })();
   },[usuario]);
 
   const guardarCarterasPatrimonio = (v) => { setCarterasPatrimonio(v); dbSetConfig("carteras_patrimonio_v1", JSON.stringify(v)); };
+  const guardarCategoriasPatrimonio = (v) => { setCategoriasPatrimonio(v); dbSetConfig("categorias_patrimonio_v1", JSON.stringify(v)); };
 
   const agregarFinanzaIvan = (f) => {
     const nuevo = { ...f, id:Date.now(), fechaISO:fechaISO() };
@@ -1000,7 +1005,7 @@ export default function App() {
           {vista==="config"      && esAdmin && <VistaConfig      modoOscuro={modoOscuro} claves={claves} onGuardarClaves={guardarClaves} estados={estados} onGuardarEstados={guardarEstados} etiquetas={etiquetas} onGuardarEtiquetas={guardarEtiquetas} t={t}/>}
           {vista==="clave"       && <VistaCambiarClave usuario={usuario} claves={claves} onGuardar={guardarClaves} t={t} modoOscuro={modoOscuro} onVolver={()=>setVista("registro")}/>}
           {vista==="ranking"     && !esAdmin && <VistaRankingEmpleado registros={registros} usuario={usuario} t={t} modoOscuro={modoOscuro}/>}
-          {vista==="finanzasivan"&& usuario.id==="ivan" && <VistaFinanzasIvan finanzas={finanzasIvan} onAgregar={agregarFinanzaIvan} onEliminar={eliminarFinanzaIvan} compromisosPersonales={compromisosPersonales} onGuardarCompromisoPersonal={guardarCompromisoPersonal} onEliminarCompromisoPersonal={eliminarCompromisoPersonal} carterasPatrimonio={carterasPatrimonio} onGuardarCarterasPatrimonio={guardarCarterasPatrimonio} t={t} modoOscuro={modoOscuro}/>}
+          {vista==="finanzasivan"&& usuario.id==="ivan" && <VistaFinanzasIvan finanzas={finanzasIvan} onAgregar={agregarFinanzaIvan} onEliminar={eliminarFinanzaIvan} compromisosPersonales={compromisosPersonales} onGuardarCompromisoPersonal={guardarCompromisoPersonal} onEliminarCompromisoPersonal={eliminarCompromisoPersonal} carterasPatrimonio={carterasPatrimonio} onGuardarCarterasPatrimonio={guardarCarterasPatrimonio} categoriasPatrimonio={categoriasPatrimonio||{ingreso:CATS_PATR_ING,egreso:CATS_PATR_GASTO}} onGuardarCategoriasPatrimonio={guardarCategoriasPatrimonio} t={t} modoOscuro={modoOscuro}/>}
         </div>
       </main>
 
@@ -3401,8 +3406,8 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
 // flujo de pasos del negocio — acá todo es tarjetas y clics directos, sin
 // wizard. Solo Iván entra aquí.
 const PATR_PERSONAS = [{id:"ivan",nombre:"Iván"},{id:"laura",nombre:"Laura"}];
-const CATS_PATR_ING   = ["Utilidad del negocio","Sueldo / trabajo independiente","Arriendo que recibe","Ventas personales","Regalo o ayuda","Otro ingreso"];
-const CATS_PATR_GASTO = ["Vivienda / Arriendo","Comida","Servicios (luz, agua, gas, internet)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Otro gasto"];
+const CATS_PATR_ING   = ["Utilidad del negocio","Sueldo / trabajo independiente","Arriendo que recibe","Ventas personales","Rendimiento de inversión","Regalo o ayuda","Otro ingreso"];
+const CATS_PATR_GASTO = ["Vivienda / Arriendo","Comida","Servicios (luz, agua, gas, internet)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Inversión","Otro gasto"];
 const SECCIONES_PATR = [
   {id:"resumen",      label:"Resumen",      icon:"chart"},
   {id:"carteras",     label:"Carteras",     icon:"wallet"},
@@ -3411,20 +3416,81 @@ const SECCIONES_PATR = [
   {id:"deudas",       label:"Deudas",       icon:"alert"},
 ];
 
-function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonales, onGuardarCompromisoPersonal, onEliminarCompromisoPersonal, carterasPatrimonio, onGuardarCarterasPatrimonio, t, modoOscuro}){
+// ── Gráficos simples en SVG puro (sin librerías externas, para no arriesgar el build) ──
+const PALETA_GRAFICO = (t) => [t.acento, t.morado, t.verde, t.amarillo, t.naranja, t.rojo];
+
+function DonutChart({data, t, modoOscuro, size=140}){
+  const positivos = data.filter(d=>d.value>0);
+  const total = positivos.reduce((a,b)=>a+b.value,0);
+  if(total<=0) return <div style={{color:t.textoMin,fontSize:12,textAlign:"center",padding:"20px 0"}}>Aún no hay saldos positivos para graficar.</div>;
+  const radius = size/2 - 14;
+  const circumference = 2*Math.PI*radius;
+  let acumulado = 0;
+  const paleta = PALETA_GRAFICO(t);
+  const segmentos = positivos.map((d,i)=>{
+    const frac = d.value/total;
+    const dash = frac*circumference;
+    const seg = {...d, dash, offset:-acumulado*circumference, color:d.color||paleta[i%paleta.length]};
+    acumulado += frac;
+    return seg;
+  });
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:18,flexWrap:"wrap"}}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{flexShrink:0}}>
+        <g transform={`translate(${size/2},${size/2}) rotate(-90)`}>
+          <circle r={radius} fill="none" stroke={t.border} strokeWidth={18}/>
+          {segmentos.map((s,i)=>(
+            <circle key={i} r={radius} fill="none" stroke={s.color} strokeWidth={18}
+              strokeDasharray={`${s.dash} ${circumference-s.dash}`} strokeDashoffset={s.offset}/>
+          ))}
+        </g>
+      </svg>
+      <div style={{display:"flex",flexDirection:"column",gap:7,minWidth:140}}>
+        {segmentos.map((s,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
+            <span style={{width:10,height:10,borderRadius:3,background:s.color,display:"inline-block",flexShrink:0}}/>
+            <span style={{color:t.textoSub,flex:1}}>{s.label}</span>
+            <span style={{color:t.textoMuted,fontWeight:600}}>{fmt(s.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BarChartH({data, t, colorDefault}){
+  const max = Math.max(...data.map(d=>d.value), 1);
+  if(data.length===0) return <div style={{color:t.textoMin,fontSize:12,textAlign:"center",padding:"20px 0"}}>Sin datos para graficar.</div>;
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:9}}>
+      {data.map((d,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{width:110,fontSize:12,color:t.textoSub,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.label}</span>
+          <div style={{flex:1,background:t.border,borderRadius:5,height:14,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${(d.value/max)*100}%`,background:d.color||colorDefault,borderRadius:5,transition:"width .4s"}}/>
+          </div>
+          <span style={{width:95,textAlign:"right",fontSize:12,color:t.textoMuted,flexShrink:0}}>{fmt(d.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonales, onGuardarCompromisoPersonal, onEliminarCompromisoPersonal, carterasPatrimonio, onGuardarCarterasPatrimonio, categoriasPatrimonio, onGuardarCategoriasPatrimonio, t, modoOscuro}){
   const [personaSel,setPersonaSel] = useState("ivan");
   const [seccion,setSeccion]       = useState("resumen");
 
   // Movimiento
   const [tipo,setTipo]           = useState("ingreso");
   const [cartera,setCartera]     = useState("");
-  const [categoria,setCategoria] = useState(CATS_PATR_ING[0]);
+  const [categoria,setCategoria] = useState(categoriasPatrimonio.ingreso[0]);
   const [monto,setMonto]         = useState("");
   const [nota,setNota]           = useState("");
   const [periodo,setPeriodo]     = useState("mes");
 
   // Nueva cartera
   const [nuevaCartera,setNuevaCartera] = useState("");
+  const [nuevaCategoria,setNuevaCategoria] = useState("");
   const [simCartera,setSimCartera]     = useState("");
   const [simMonto,setSimMonto]         = useState("");
 
@@ -3486,7 +3552,7 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
   });
 
   const cambiarPersona = (pid) => { playSound("nav"); setPersonaSel(pid); setCartera(""); setSimCartera(""); };
-  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(t2==="ingreso"?CATS_PATR_ING[0]:CATS_PATR_GASTO[0]); };
+  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(t2==="ingreso"?categoriasPatrimonio.ingreso[0]:categoriasPatrimonio.egreso[0]); };
 
   const agregarCartera = () => {
     const n = nuevaCartera.trim();
@@ -3499,6 +3565,22 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
   const quitarCartera = (nombre) => {
     playSound("click");
     onGuardarCarterasPatrimonio({...carterasPatrimonio, [personaSel]: (carterasPatrimonio[personaSel]||[]).filter(c=>c!==nombre)});
+  };
+
+  const agregarCategoria = () => {
+    const v = nuevaCategoria.trim();
+    if(!v) return;
+    const key = tipo==="ingreso" ? "ingreso" : "egreso";
+    if(categoriasPatrimonio[key].some(c=>c.toLowerCase()===v.toLowerCase())){ setNuevaCategoria(""); return; }
+    playSound("success");
+    onGuardarCategoriasPatrimonio({...categoriasPatrimonio, [key]: [...categoriasPatrimonio[key], v]});
+    setCategoria(v);
+    setNuevaCategoria("");
+  };
+  const quitarCategoria = (cat) => {
+    const key = tipo==="ingreso" ? "ingreso" : "egreso";
+    playSound("click");
+    onGuardarCategoriasPatrimonio({...categoriasPatrimonio, [key]: categoriasPatrimonio[key].filter(c=>c!==cat)});
   };
 
   const agregarMov = () => {
@@ -3640,28 +3722,17 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
           </div>
         )}
 
-        <div style={{...card(t),borderRadius:14,padding:"14px 16px"}}>
-          <div style={{fontWeight:700,fontSize:12,color:t.textoSub,marginBottom:10,textTransform:"uppercase",letterSpacing:.5}}>Carteras de {nombrePersonaSel}</div>
-          {nombresCarteras.length===0 && <div style={{color:t.textoMin,fontSize:12}}>Aún no tiene carteras. Ve a la pestaña "Carteras" para crear la primera.</div>}
-          <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
-            {nombresCarteras.map(c=>(
-              <div key={c} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",border:`1px solid ${t.border}`,borderRadius:10,padding:"8px 14px",minWidth:130}}>
-                <div style={{fontSize:11,color:t.textoMuted}}>{c}</div>
-                <div style={{fontSize:14,fontWeight:800,color:calcSel.saldos[c]>=0?t.texto:t.rojo}}>{fmt(calcSel.saldos[c])}</div>
-              </div>
-            ))}
-          </div>
+        <div style={{...card(t),borderRadius:14,padding:"16px"}}>
+          <div style={{fontWeight:700,fontSize:12,color:t.textoSub,marginBottom:12,textTransform:"uppercase",letterSpacing:.5}}>Cómo se reparte el patrimonio de {nombrePersonaSel}</div>
+          {nombresCarteras.length===0
+            ? <div style={{color:t.textoMin,fontSize:12}}>Aún no tiene carteras. Ve a la pestaña "Carteras" para crear la primera.</div>
+            : <DonutChart t={t} modoOscuro={modoOscuro} data={nombresCarteras.map(c=>({label:c, value:calcSel.saldos[c]}))}/>}
         </div>
 
         {topGastos.length>0 && (
           <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
             <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>En qué se le va la plata a {nombrePersonaSel}</div>
-            {topGastos.map(([cat,val])=>(
-              <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.2)"}`}}>
-                <span style={{color:t.textoSub,fontSize:13}}>{cat}</span>
-                <span style={{color:t.rojo,fontWeight:600,fontSize:13}}>{fmt(val)}</span>
-              </div>
-            ))}
+            <BarChartH t={t} colorDefault={t.rojo} data={topGastos.map(([cat,val])=>({label:cat, value:val}))}/>
           </div>
         )}
       </>)}
@@ -3752,11 +3823,31 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
               <div>
                 <label style={labelStyle(t)}>Categoría</label>
                 <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
-                  {(tipo==="ingreso"?CATS_PATR_ING:CATS_PATR_GASTO).map(c=><option key={c}>{c}</option>)}
+                  {(tipo==="ingreso"?categoriasPatrimonio.ingreso:categoriasPatrimonio.egreso).map(c=><option key={c}>{c}</option>)}
                 </select>
               </div>
               <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
               <div><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Mercado semana..."/></div>
+              <div style={{gridColumn:"1 / -1",background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:11,color:t.textoMuted,marginBottom:6,textTransform:"uppercase",letterSpacing:.5}}>¿No está tu categoría? Agrégala aquí</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+                  {(tipo==="ingreso"?categoriasPatrimonio.ingreso:categoriasPatrimonio.egreso).map(c=>(
+                    <span key={c} style={{background:modoOscuro?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.6)",border:`1px solid ${t.border}`,borderRadius:20,padding:"3px 6px 3px 10px",fontSize:11,color:t.textoSub,display:"flex",alignItems:"center",gap:5}}>
+                      {c}
+                      <button className="neo-btn" onClick={()=>quitarCategoria(c)} style={{background:"none",border:"none",cursor:"pointer",color:t.textoMuted,display:"flex",padding:1}}>
+                        <Icon name="x" size={10} color={t.textoMuted}/>
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <input style={{...inputStyle(t,modoOscuro),flex:1}} value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}
+                    onKeyDown={e=>e.key==="Enter"&&agregarCategoria()} placeholder="Ej: Inversión, Mascota, Regalo..."/>
+                  <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"8px 14px"}} onClick={agregarCategoria}>
+                    <Icon name="plus" size={14}/>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
           <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"10px 24px",marginTop:14}} disabled={nombresCarteras.length===0} onClick={agregarMov}>
