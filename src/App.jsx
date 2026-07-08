@@ -3409,7 +3409,8 @@ const PATR_PERSONAS = [{id:"ivan",nombre:"Iván"},{id:"laura",nombre:"Laura"}];
 const CATS_PATR_ING   = ["Utilidad del negocio","Sueldo / trabajo independiente","Arriendo que recibe","Ventas personales","Rendimiento de inversión","Regalo o ayuda","Otro ingreso"];
 const CATS_PATR_GASTO = ["Vivienda / Arriendo","Comida","Servicios (luz, agua, gas, internet)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Inversión","Otro gasto"];
 const SECCIONES_PATR = [
-  {id:"resumen",      label:"Resumen",      icon:"chart"},
+  {id:"resumen",      label:"Resumen",      icon:"eye"},
+  {id:"graficas",     label:"Gráficas",     icon:"chart"},
   {id:"carteras",     label:"Carteras",     icon:"wallet"},
   {id:"movimientos",  label:"Movimientos",  icon:"list"},
   {id:"compromisos",  label:"Compromisos",  icon:"repeat"},
@@ -3472,6 +3473,54 @@ function BarChartH({data, t, colorDefault}){
           <span style={{width:95,textAlign:"right",fontSize:12,color:t.textoMuted,flexShrink:0}}>{fmt(d.value)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Comparación en pares (ej: Iván vs Laura) para varias métricas a la vez
+function BarComparacionDual({data, t}){
+  const max = Math.max(...data.flatMap(d=>[d.a,d.b]), 1);
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {data.map((d,i)=>(
+        <div key={i}>
+          <div style={{fontSize:12,color:t.textoSub,marginBottom:6,fontWeight:700}}>{d.label}</div>
+          {[{v:d.a,c:d.colorA,l:d.labelA},{v:d.b,c:d.colorB,l:d.labelB}].map((x,j)=>(
+            <div key={j} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <span style={{width:46,fontSize:11,color:t.textoMuted,flexShrink:0}}>{x.l}</span>
+              <div style={{flex:1,background:t.border,borderRadius:4,height:13,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${(Math.max(0,x.v)/max)*100}%`,background:x.c,borderRadius:4,transition:"width .4s"}}/>
+              </div>
+              <span style={{width:90,textAlign:"right",fontSize:11,color:t.textoMuted,flexShrink:0}}>{fmt(x.v)}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Evolución mensual (últimos 6 meses): barras pareadas de ingreso/gasto por mes
+function BarChartMeses({data, t}){
+  const max = Math.max(...data.flatMap(d=>[d.ingreso,d.gasto]), 1);
+  const nombreMes = (ym) => { const [y,m] = ym.split("-"); return new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-CO",{month:"short"}); };
+  return(
+    <div>
+      <div style={{display:"flex",gap:6,alignItems:"flex-end",height:130,padding:"10px 4px 0"}}>
+        {data.map((d,i)=>(
+          <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+            <div style={{display:"flex",gap:3,alignItems:"flex-end",height:100,width:"100%",justifyContent:"center"}}>
+              <div title={`Ingresó: ${fmt(d.ingreso)}`} style={{width:12,height:`${Math.max(2,(d.ingreso/max)*100)}%`,background:t.verde,borderRadius:"3px 3px 0 0"}}/>
+              <div title={`Gastó: ${fmt(d.gasto)}`} style={{width:12,height:`${Math.max(2,(d.gasto/max)*100)}%`,background:t.rojo,borderRadius:"3px 3px 0 0"}}/>
+            </div>
+            <span style={{fontSize:10,color:t.textoMuted,textTransform:"capitalize"}}>{nombreMes(d.mes)}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:8,fontSize:11,color:t.textoMuted}}>
+        <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:9,height:9,borderRadius:2,background:t.verde,display:"inline-block"}}/> Ingresó</span>
+        <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:9,height:9,borderRadius:2,background:t.rojo,display:"inline-block"}}/> Gastó</span>
+      </div>
     </div>
   );
 }
@@ -3541,6 +3590,19 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
   const gastoPeriodo = vistas.filter(f=>f.tipo==="gasto").reduce((a,b)=>a+b.monto,0);
   const libre = ingPeriodo - gastoPeriodo;
   const topGastos = Object.entries(vistas.filter(f=>f.tipo==="gasto").reduce((acc,f)=>{acc[f.categoria]=(acc[f.categoria]||0)+f.monto;return acc;},{})).sort((a,b)=>b[1]-a[1]);
+
+  // Evolución mensual (últimos 6 meses) de la persona seleccionada
+  const mesesEvolucion = (()=>{
+    const meses = [];
+    for(let i=5;i>=0;i--){
+      const d = getLocalDate(); d.setMonth(d.getMonth()-i);
+      meses.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+    }
+    return meses.map(ym=>{
+      const movs = movsPersona.filter(f=>f.fechaISO.slice(0,7)===ym);
+      return { mes: ym, ingreso: movs.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0), gasto: movs.filter(f=>f.tipo==="gasto").reduce((a,b)=>a+b.monto,0) };
+    });
+  })();
 
   const compromisosPersona = compromisosPersonales.filter(c=>c.persona===personaSel && c.tipo==="mensual");
   const deudasPersona      = compromisosPersonales.filter(c=>c.persona===personaSel && c.tipo==="deuda");
@@ -3735,7 +3797,39 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
         )}
 
         <div style={{...card(t),borderRadius:14,padding:"16px"}}>
-          <div style={{fontWeight:700,fontSize:12,color:t.textoSub,marginBottom:12,textTransform:"uppercase",letterSpacing:.5}}>Cómo se reparte el patrimonio de {nombrePersonaSel}</div>
+          <div style={{fontWeight:700,fontSize:12,color:t.textoSub,marginBottom:10,textTransform:"uppercase",letterSpacing:.5}}>Carteras de {nombrePersonaSel}</div>
+          {nombresCarteras.length===0 && <div style={{color:t.textoMin,fontSize:12}}>Aún no tiene carteras. Ve a la pestaña "Carteras" para crear la primera.</div>}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+            {nombresCarteras.map(c=>(
+              <div key={c} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",border:`1px solid ${t.border}`,borderRadius:10,padding:"8px 14px",minWidth:130}}>
+                <div style={{fontSize:11,color:t.textoMuted}}>{c}</div>
+                <div style={{fontSize:14,fontWeight:800,color:calcSel.saldos[c]>=0?t.texto:t.rojo}}>{fmt(calcSel.saldos[c])}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <span style={{color:t.textoMuted,fontSize:12}}>¿Quieres ver esto en gráficas? Ve a la pestaña <b style={{color:t.acento}}>"Gráficas"</b> del menú de arriba.</span>
+        </div>
+      </>)}
+
+      {/* ══════════════ GRÁFICAS ══════════════ */}
+      {seccion==="graficas" && (<>
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:6,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Iván vs Laura</div>
+          <p style={{color:t.textoMuted,fontSize:12,margin:"0 0 14px"}}>Comparación directa, sin importar en qué pestaña de persona estés.</p>
+          <BarComparacionDual t={t} data={[
+            {label:"En cuentas (bruto)", a:calcIvan.patrimonioCarteras, b:calcLaura.patrimonioCarteras, labelA:"Iván", labelB:"Laura", colorA:t.acento, colorB:t.morado},
+            {label:"Patrimonio neto",    a:calcIvan.patrimonioNeto,     b:calcLaura.patrimonioNeto,     labelA:"Iván", labelB:"Laura", colorA:t.acento, colorB:t.morado},
+            {label:`Le entró (${periodoLabel})`, a:finanzas.filter(f=>f.persona==="ivan"&&f.tipo==="ingreso").filter(filtrarPeriodo).reduce((x,y)=>x+y.monto,0), b:finanzas.filter(f=>f.persona==="laura"&&f.tipo==="ingreso").filter(filtrarPeriodo).reduce((x,y)=>x+y.monto,0), labelA:"Iván", labelB:"Laura", colorA:t.verde, colorB:"#4ade80"},
+            {label:`Gastó (${periodoLabel})`,     a:finanzas.filter(f=>f.persona==="ivan"&&f.tipo==="gasto").filter(filtrarPeriodo).reduce((x,y)=>x+y.monto,0),   b:finanzas.filter(f=>f.persona==="laura"&&f.tipo==="gasto").filter(filtrarPeriodo).reduce((x,y)=>x+y.monto,0),   labelA:"Iván", labelB:"Laura", colorA:t.rojo, colorB:"#fb7185"},
+          ]}/>
+        </div>
+
+        <PeriodoBtns/>
+
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Cómo se reparte el patrimonio de {nombrePersonaSel}</div>
           {nombresCarteras.length===0
             ? <div style={{color:t.textoMin,fontSize:12}}>Aún no tiene carteras. Ve a la pestaña "Carteras" para crear la primera.</div>
             : <DonutChart t={t} modoOscuro={modoOscuro} data={nombresCarteras.map(c=>({label:c, value:calcSel.saldos[c]}))}/>}
@@ -3747,6 +3841,12 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
             <BarChartH t={t} colorDefault={t.rojo} data={topGastos.map(([cat,val])=>({label:cat, value:val}))}/>
           </div>
         )}
+
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:4,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Evolución de {nombrePersonaSel} (últimos 6 meses)</div>
+          <p style={{color:t.textoMuted,fontSize:12,margin:"0 0 4px"}}>Ingresos vs gastos mes a mes.</p>
+          <BarChartMeses t={t} data={mesesEvolucion}/>
+        </div>
       </>)}
 
       {/* ══════════════ CARTERAS ══════════════ */}
