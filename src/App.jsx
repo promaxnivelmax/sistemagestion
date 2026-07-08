@@ -391,8 +391,11 @@ const USUARIOS_BASE = {
 };
 const CLAVES_BASE = { jeimy:"1111", luis:"2222", sandra:"5555", laura:"3333", luisa:"4444", ivan:"0000" };
 
-const CATEGORIAS_INGRESO = ["Impresión","Fotocopia","Escáner","Trabajo en computador","Trámite en línea","Postulación","Envío de documentos","Otro ingreso"];
-const CATEGORIAS_EGRESO  = ["Papelería","Tóner / Tinta","Servicios públicos","Internet","Arriendo","Transporte","Alimentación","Salario","Mantenimiento equipo","Otro gasto"];
+// Cada etiqueta ahora indica a qué local aplica: "ambos" | "internet52" | "tramites"
+const CATEGORIAS_INGRESO = ["Impresión","Fotocopia","Escáner","Trabajo en computador","Trámite en línea","Postulación","Envío de documentos","Otro ingreso"].map(n=>({nombre:n,local:"ambos"}));
+const CATEGORIAS_EGRESO  = ["Papelería","Tóner / Tinta","Servicios públicos","Internet","Arriendo","Transporte","Alimentación","Salario","Mantenimiento equipo","Otro gasto"].map(n=>({nombre:n,local:"ambos"}));
+// Convierte etiquetas viejas (solo texto) al formato nuevo {nombre,local} — por compatibilidad con lo ya guardado en Supabase
+const normalizarEtiquetas = (arr) => (arr||[]).map(e => typeof e==="string" ? {nombre:e, local:"ambos"} : e);
 const LOCALES = { internet52:"Internet La 52", tramites:"Trámites y Servicios" };
 const MEDIOS_LOCAL = { internet52:["Efectivo","Nequi"], tramites:["Efectivo","DaviPlata"] };
 
@@ -579,7 +582,10 @@ export default function App() {
       if(et) {
         try {
           const parsed = JSON.parse(et);
-          setEtiquetas({ ingreso: parsed.ingreso?.length ? parsed.ingreso : CATEGORIAS_INGRESO, egreso: parsed.egreso?.length ? parsed.egreso : CATEGORIAS_EGRESO });
+          setEtiquetas({
+            ingreso: parsed.ingreso?.length ? normalizarEtiquetas(parsed.ingreso) : CATEGORIAS_INGRESO,
+            egreso:  parsed.egreso?.length  ? normalizarEtiquetas(parsed.egreso)  : CATEGORIAS_EGRESO,
+          });
         } catch(e) {}
       }
       // Restaurar sesión persistente si no expiró
@@ -2340,6 +2346,7 @@ function VistaRegistro({usuario,onRegistrar,registros,etiquetas,t,modoOscuro}){
 
   const pasos = getPasos(esAdmin, tipo);
   const mediosDisp = esAdmin ? (localSel ? MEDIOS_LOCAL[localSel] : []) : usuario.medios;
+  const localEfectivo = esAdmin ? localSel : usuario.local; // para filtrar qué etiquetas mostrar segun el local
 
   const ir = (n) => { setFade(false); setTimeout(()=>{setPaso(n);setFade(true);},130); };
   const avanzar = () => ir(paso+1);
@@ -2567,12 +2574,12 @@ function VistaRegistro({usuario,onRegistrar,registros,etiquetas,t,modoOscuro}){
 
         {paso===pasos.cat && (
           <Paso titulo={tipo==="ingreso"?"¿Qué servicio prestaste?":"¿Tipo de gasto?"} sub="Presiona el número" t={t}>
-            {(tipo==="ingreso"?etiquetas.ingreso:etiquetas.egreso).map((c,i)=>(
-              <OpcionBtn t={t} modoOscuro={modoOscuro} key={c} num={i+1} label={c}
+            {(tipo==="ingreso"?etiquetas.ingreso:etiquetas.egreso).filter(e=>e.local==="ambos"||e.local===localEfectivo).map((e,i)=>(
+              <OpcionBtn t={t} modoOscuro={modoOscuro} key={e.nombre} num={i+1} label={e.nombre}
                 icon={tipo==="ingreso"?"trending":"arrow_down"}
                 color={tipo==="ingreso"?t.acento:t.naranja} small
                 sound="select"
-                onClick={()=>{setCategoria(c);avanzar();}}/>
+                onClick={()=>{setCategoria(e.nombre);avanzar();}}/>
             ))}
           </Paso>
         )}
@@ -3128,7 +3135,9 @@ function VistaHistorial({registros,onEditar,onEliminar,etiquetas,t,modoOscuro}){
                   <div>
                     <label style={labelStyle(t)}>Nueva categoría {campos.categoria!==camposOriginales.categoria&&<span style={{color:t.acento,fontSize:10}}>✱ cambiado</span>}</label>
                     <select style={inputStyle(t,modoOscuro)} value={campos.categoria} onChange={e=>setCampos({...campos,categoria:e.target.value})}>
-                      {(r.tipo==="ingreso"?etiquetas.ingreso:etiquetas.egreso).map(c=><option key={c}>{c}</option>)}
+                      {(r.tipo==="ingreso"?etiquetas.ingreso:etiquetas.egreso).filter(e2=>e2.local==="ambos"||e2.local===r.local).map(e2=><option key={e2.nombre}>{e2.nombre}</option>)}
+                      {/* Si la categoría actual del registro ya no existe en la lista (se borró o es de otro local), la dejamos disponible igual para no perder el dato */}
+                      {!(r.tipo==="ingreso"?etiquetas.ingreso:etiquetas.egreso).some(e2=>e2.nombre===campos.categoria) && <option value={campos.categoria}>{campos.categoria}</option>}
                     </select>
                   </div>
                   <div style={{gridColumn:"1/-1"}}>
@@ -3865,41 +3874,52 @@ function VistaUsuarios({claves, onGuardarClaves, estados, onGuardarEstados, t, m
 function VistaEtiquetas({etiquetas, onGuardarEtiquetas, t, modoOscuro}){
   const [nuevaIng, setNuevaIng] = useState("");
   const [nuevaEgr, setNuevaEgr] = useState("");
+  const [localIng, setLocalIng] = useState("ambos");
+  const [localEgr, setLocalEgr] = useState("ambos");
   const [msg, setMsg] = useState(null);
 
   const avisar = (texto) => { setMsg(texto); setTimeout(()=>setMsg(null), 2500); };
+  const labelLocal = (l) => l==="ambos" ? "Ambos locales" : l==="internet52" ? "Internet La 52" : "Trámites y Servicios";
 
-  const agregar = (tipo, valor, setValor) => {
+  const agregar = (tipo, valor, setValor, local) => {
     const v = valor.trim();
     if(!v) return;
-    if(etiquetas[tipo].some(e=>e.toLowerCase()===v.toLowerCase())){ avisar("Esa etiqueta ya existe"); return; }
+    if(etiquetas[tipo].some(e=>e.nombre.toLowerCase()===v.toLowerCase())){ avisar("Esa etiqueta ya existe"); return; }
     playSound("success");
-    onGuardarEtiquetas({...etiquetas, [tipo]:[...etiquetas[tipo], v]});
+    onGuardarEtiquetas({...etiquetas, [tipo]:[...etiquetas[tipo], {nombre:v, local}]});
     setValor("");
   };
-  const quitar = (tipo, valor) => {
+  const quitar = (tipo, nombre) => {
     playSound("click");
-    onGuardarEtiquetas({...etiquetas, [tipo]: etiquetas[tipo].filter(e=>e!==valor)});
+    onGuardarEtiquetas({...etiquetas, [tipo]: etiquetas[tipo].filter(e=>e.nombre!==nombre)});
   };
 
-  const Lista = ({tipo, titulo, color, nuevoValor, setNuevoValor}) => (
-    <div style={{background:modoOscuro?"rgba(15,23,42,0.55)":"rgba(218,227,240,0.5)",borderRadius:14,padding:"14px 16px",flex:1,minWidth:240}}>
+  const Lista = ({tipo, titulo, color, nuevoValor, setNuevoValor, localSel, setLocalSel}) => (
+    <div style={{background:modoOscuro?"rgba(15,23,42,0.55)":"rgba(218,227,240,0.5)",borderRadius:14,padding:"14px 16px",flex:1,minWidth:260}}>
       <div style={{fontWeight:700,fontSize:12,color:color,marginBottom:10,textTransform:"uppercase",letterSpacing:.5}}>{titulo}</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
         {etiquetas[tipo].map(e=>(
-          <span key={e} style={{background:modoOscuro?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.6)",border:`1px solid ${t.border}`,borderRadius:20,padding:"5px 8px 5px 12px",fontSize:12,color:t.textoSub,display:"flex",alignItems:"center",gap:6}}>
-            {e}
-            <button className="neo-btn" onClick={()=>quitar(tipo,e)} style={{background:"none",border:"none",cursor:"pointer",color:t.textoMuted,display:"flex",padding:2}}>
+          <span key={e.nombre} style={{background:modoOscuro?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.6)",border:`1px solid ${t.border}`,borderRadius:20,padding:"5px 8px 5px 12px",fontSize:12,color:t.textoSub,display:"flex",alignItems:"center",gap:6}}>
+            {e.nombre}
+            <span style={{fontSize:10,color:e.local==="ambos"?t.textoMuted:t.acento,fontWeight:700,background:e.local==="ambos"?"transparent":(modoOscuro?"rgba(59,130,246,0.12)":"rgba(37,99,235,0.1)"),padding:e.local==="ambos"?0:"1px 6px",borderRadius:8}}>
+              {e.local==="ambos" ? "" : labelLocal(e.local)}
+            </span>
+            <button className="neo-btn" onClick={()=>quitar(tipo,e.nombre)} style={{background:"none",border:"none",cursor:"pointer",color:t.textoMuted,display:"flex",padding:2}}>
               <Icon name="x" size={11} color={t.textoMuted}/>
             </button>
           </span>
         ))}
         {etiquetas[tipo].length===0 && <span style={{color:t.textoMin,fontSize:12}}>Sin etiquetas</span>}
       </div>
-      <div style={{display:"flex",gap:8}}>
-        <input style={{...inputStyle(t,modoOscuro),flex:1}} value={nuevoValor} onChange={e=>setNuevoValor(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&agregar(tipo,nuevoValor,setNuevoValor)} placeholder="Nueva etiqueta..."/>
-        <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"8px 14px"}} onClick={()=>agregar(tipo,nuevoValor,setNuevoValor)}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <input style={{...inputStyle(t,modoOscuro),flex:1,minWidth:120}} value={nuevoValor} onChange={e=>setNuevoValor(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&agregar(tipo,nuevoValor,setNuevoValor,localSel)} placeholder="Nueva etiqueta..."/>
+        <select style={{...inputStyle(t,modoOscuro),width:"auto",minWidth:130}} value={localSel} onChange={e=>setLocalSel(e.target.value)}>
+          <option value="ambos">Ambos locales</option>
+          <option value="internet52">Internet La 52</option>
+          <option value="tramites">Trámites y Servicios</option>
+        </select>
+        <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"8px 14px"}} onClick={()=>agregar(tipo,nuevoValor,setNuevoValor,localSel)}>
           <Icon name="plus" size={14}/>
         </button>
       </div>
@@ -3912,7 +3932,7 @@ function VistaEtiquetas({etiquetas, onGuardarEtiquetas, t, modoOscuro}){
         <Icon name="box" size={15} color={t.textoSub}/> Etiquetas de ingresos y gastos
       </div>
       <p style={{color:t.textoMuted,fontSize:13,margin:"8px 0 16px",lineHeight:1.5}}>
-        Estas son las opciones que ven los colaboradores al registrar una venta o un gasto. Agrega o quita las que necesites — los registros ya guardados no se ven afectados.
+        Estas son las opciones que ven los colaboradores al registrar una venta o un gasto. Elige a qué local aplica cada una — si eliges "Ambos locales" aparecerá en los dos. Los registros ya guardados no se ven afectados.
       </p>
       {msg && (
         <div style={{background:modoOscuro?"rgba(248,113,113,0.08)":"rgba(220,38,38,0.08)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:10,padding:"8px 14px",marginBottom:14,fontSize:13,color:t.rojo,fontWeight:600}}>
@@ -3920,8 +3940,8 @@ function VistaEtiquetas({etiquetas, onGuardarEtiquetas, t, modoOscuro}){
         </div>
       )}
       <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-        <Lista tipo="ingreso" titulo="Ingresos / Servicios" color={t.verde} nuevoValor={nuevaIng} setNuevoValor={setNuevaIng}/>
-        <Lista tipo="egreso"  titulo="Gastos"               color={t.rojo}  nuevoValor={nuevaEgr} setNuevoValor={setNuevaEgr}/>
+        <Lista tipo="ingreso" titulo="Ingresos / Servicios" color={t.verde} nuevoValor={nuevaIng} setNuevoValor={setNuevaIng} localSel={localIng} setLocalSel={setLocalIng}/>
+        <Lista tipo="egreso"  titulo="Gastos"               color={t.rojo}  nuevoValor={nuevaEgr} setNuevoValor={setNuevaEgr} localSel={localEgr} setLocalSel={setLocalEgr}/>
       </div>
     </div>
   );
