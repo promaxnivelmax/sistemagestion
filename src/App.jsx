@@ -280,12 +280,12 @@ const dbGetCompromisos = async () => {
   try {
     const { data, error } = await supabase.from("compromisos_caja").select("*").order("dia");
     if (error || !data) return [];
-    return data.map(c => ({ id: c.id, nombre: c.nombre, local: c.local, medio: c.medio, dia: c.dia, valor: Number(c.valor), nota: c.nota||"" }));
+    return data.map(c => ({ id: c.id, nombre: c.nombre, local: c.local, medio: c.medio, dia: c.dia, valor: Number(c.valor), nota: c.nota||"", pagado: !!c.pagado, pagadoMes: c.pagado_mes || null }));
   } catch(e) { return []; }
 };
 const dbUpsertCompromiso = async (comp) => {
   try {
-    await supabase.from("compromisos_caja").upsert({ id: comp.id, nombre: comp.nombre, local: comp.local, medio: comp.medio, dia: comp.dia, valor: comp.valor, nota: comp.nota||"" }, { onConflict: "id" });
+    await supabase.from("compromisos_caja").upsert({ id: comp.id, nombre: comp.nombre, local: comp.local, medio: comp.medio, dia: comp.dia, valor: comp.valor, nota: comp.nota||"", pagado: !!comp.pagado, pagado_mes: comp.pagadoMes||null }, { onConflict: "id" });
   } catch(e) { console.error("dbUpsertCompromiso:", e); }
 };
 const dbDeleteCompromiso = async (id) => {
@@ -308,6 +308,26 @@ const dbSetConfig = async (key, value) => {
 
 // Alias para config
 const dbSet = dbSetConfig;
+
+// ── Finanzas personales de Iván (separadas del negocio) ───────────────────────
+const dbGetFinanzasIvan = async () => {
+  try {
+    const { data, error } = await supabase.from("finanzas_ivan").select("*").order("fecha_iso", { ascending: false }).order("creado_en", { ascending: false });
+    if (error || !data) return [];
+    return data.map(f => ({ id: f.id, tipo: f.tipo, categoria: f.categoria, monto: Number(f.monto), nota: f.nota||"", fechaISO: f.fecha_iso }));
+  } catch(e) { console.error("dbGetFinanzasIvan:", e); return []; }
+};
+const dbInsertFinanzaIvan = async (f) => {
+  try {
+    const { error } = await supabase.from("finanzas_ivan").insert({
+      id: f.id, tipo: f.tipo, categoria: f.categoria, monto: f.monto, nota: f.nota||"", fecha_iso: f.fechaISO,
+    });
+    if (error) console.error("dbInsertFinanzaIvan:", error);
+  } catch(e) { console.error("dbInsertFinanzaIvan:", e); }
+};
+const dbDeleteFinanzaIvan = async (id) => {
+  try { await supabase.from("finanzas_ivan").delete().eq("id", id); } catch(e) {}
+};
 
 // ─── ÍCONOS SVG ───────────────────────────────────────────────────────────────
 const Icon = ({ name, size = 16, color = "currentColor" }) => {
@@ -362,16 +382,17 @@ const Icon = ({ name, size = 16, color = "currentColor" }) => {
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 const USUARIOS_BASE = {
-  jeimy: { nombre:"Jeimy", local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:true  },
-  luis:  { nombre:"Luis",  local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:false },
-  laura: { nombre:"Laura", local:"tramites",   role:"admin", medios:["Efectivo","DaviPlata","Nequi"],  cuadre:true  },
-  luisa: { nombre:"Luisa", local:"tramites",   role:"empleado", medios:["Efectivo","DaviPlata"],  cuadre:false },
-  ivan:  { nombre:"Iván",  local:"ambos",      role:"admin",    medios:["Efectivo","Nequi","DaviPlata"], cuadre:false },
+  jeimy:  { nombre:"Jeimy",  local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:true  },
+  luis:   { nombre:"Luis",   local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:false },
+  sandra: { nombre:"Sandra", local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:false },
+  laura:  { nombre:"Laura",  local:"ambos",      role:"admin",    medios:["Efectivo","Nequi","DaviPlata"], cuadre:false },
+  luisa:  { nombre:"Luisa",  local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:false },
+  ivan:   { nombre:"Iván",   local:"ambos",      role:"admin",    medios:["Efectivo","Nequi","DaviPlata"], cuadre:false },
 };
-const CLAVES_BASE = { jeimy:"1111", luis:"2222", laura:"3333", luisa:"4444", ivan:"0000" };
+const CLAVES_BASE = { jeimy:"1111", luis:"2222", sandra:"5555", laura:"3333", luisa:"4444", ivan:"0000" };
 
 const CATEGORIAS_INGRESO = ["Impresión","Fotocopia","Escáner","Trabajo en computador","Trámite en línea","Postulación","Envío de documentos","Otro ingreso"];
-const CATEGORIAS_EGRESO  = ["Papelería","Tóner / Tinta","Servicios públicos","Internet","Arriendo","Transporte","Alimentación","Mantenimiento equipo","Otro gasto"];
+const CATEGORIAS_EGRESO  = ["Papelería","Tóner / Tinta","Servicios públicos","Internet","Arriendo","Transporte","Alimentación","Salario","Mantenimiento equipo","Otro gasto"];
 const LOCALES = { internet52:"Internet La 52", tramites:"Trámites y Servicios" };
 const MEDIOS_LOCAL = { internet52:["Efectivo","Nequi"], tramites:["Efectivo","DaviPlata"] };
 
@@ -527,10 +548,12 @@ export default function App() {
   const [usuario,      setUsuario]      = useState(null);
   const [registros,    setRegistros]    = useState([]);
   const [compromisos,  setCompromisos]  = useState([]);
+  const [finanzasIvan, setFinanzasIvan] = useState([]);
   const [vista,        setVista]        = useState("registro");
   const [modoOscuro,   setModoOscuro]   = useState(true);
   const [claves,       setClaves]       = useState(CLAVES_BASE);
-  const [estados,      setEstados]      = useState({ jeimy:true, luis:true, laura:true, luisa:true, ivan:true });
+  const [estados,      setEstados]      = useState({ jeimy:true, luis:true, sandra:true, laura:true, luisa:true, ivan:true });
+  const [etiquetas,    setEtiquetas]    = useState({ ingreso: CATEGORIAS_INGRESO, egreso: CATEGORIAS_EGRESO });
   const [cargando,     setCargando]     = useState(true);
   // Para control de sesión en múltiples pestañas
   const [otrasSesiones, setOtrasSesiones] = useState(false);
@@ -549,6 +572,13 @@ export default function App() {
       const c  = await dbGetCompromisos();           setCompromisos(c);
       const cl = await dbGetConfig("claves_caja_v3");      if(cl) setClaves(JSON.parse(cl));
       const es = await dbGetConfig("estados_caja_v3");     if(es) setEstados(JSON.parse(es));
+      const et = await dbGetConfig("etiquetas_caja_v1");
+      if(et) {
+        try {
+          const parsed = JSON.parse(et);
+          setEtiquetas({ ingreso: parsed.ingreso?.length ? parsed.ingreso : CATEGORIAS_INGRESO, egreso: parsed.egreso?.length ? parsed.egreso : CATEGORIAS_EGRESO });
+        } catch(e) {}
+      }
       // Restaurar sesión persistente si no expiró
       try {
         const sesGuardada = sessionStorage.getItem(SESSION_PERSIST_KEY);
@@ -722,6 +752,7 @@ export default function App() {
   };
   const guardarClaves = async(v)=>{ setClaves(v);      await dbSetConfig("claves_caja_v3",  JSON.stringify(v)); };
   const guardarEstados= async(v)=>{ setEstados(v);     await dbSetConfig("estados_caja_v3", JSON.stringify(v)); };
+  const guardarEtiquetas = async(v)=>{ setEtiquetas(v); await dbSetConfig("etiquetas_caja_v1", JSON.stringify(v)); };
   const toggleModo = () => {
     const nuevo = !modoOscuro;
     setModoOscuro(nuevo);
@@ -761,6 +792,22 @@ export default function App() {
   const eliminarRegistro = (id) => {
     setRegistros(prev => prev.filter(r=> r.id!==id));
     dbDeleteRegistro(id);
+  };
+
+  // ── Finanzas personales de Iván: solo se cargan si el usuario que entra es Iván ──
+  useEffect(()=>{
+    if(!usuario || usuario.id!=="ivan") return;
+    (async()=>{ setFinanzasIvan(await dbGetFinanzasIvan()); })();
+  },[usuario]);
+
+  const agregarFinanzaIvan = (f) => {
+    const nuevo = { ...f, id:Date.now(), fechaISO:fechaISO() };
+    setFinanzasIvan(prev => [nuevo, ...prev]);
+    dbInsertFinanzaIvan(nuevo);
+  };
+  const eliminarFinanzaIvan = (id) => {
+    setFinanzasIvan(prev => prev.filter(f=>f.id!==id));
+    dbDeleteFinanzaIvan(id);
   };
 
   if(cargando) return (
@@ -803,7 +850,12 @@ export default function App() {
 
   const esAdmin = usuario.role==="admin";
   const hoyNum = getLocalDate().getDate();
-  const alertas = compromisos.filter(c => { const diff = c.dia - hoyNum; return diff >= 0 && diff <= 5; });
+  const mesActualApp = fechaISO().slice(0,7);
+  const alertas = compromisos.filter(c => {
+    const yaPagado = c.pagado && c.pagadoMes===mesActualApp;
+    if(yaPagado) return false; // no molestar con recordatorios de algo que ya se pagó este mes
+    const diff = c.dia - hoyNum; return diff >= 0 && diff <= 5;
+  });
 
   return (
     <div style={{minHeight:"100vh", color:t.texto, fontFamily:"'Nunito','DM Sans','Segoe UI',sans-serif", fontSize:14, position:"relative"}}>
@@ -878,14 +930,15 @@ export default function App() {
 
       <main className="main-content" style={{padding:"20px",maxWidth:980,margin:"0 auto",position:"relative",zIndex:1}}>
         <div className="fade-in">
-          {vista==="registro"    && <VistaRegistro    usuario={usuario} onRegistrar={agregarRegistro} registros={registros} t={t} modoOscuro={modoOscuro}/>}
+          {vista==="registro"    && <VistaRegistro    usuario={usuario} onRegistrar={agregarRegistro} registros={registros} etiquetas={etiquetas} t={t} modoOscuro={modoOscuro}/>}
           {vista==="dashboard"   && esAdmin && <VistaDashboard   registros={registros} t={t} modoOscuro={modoOscuro}/>}
-          {vista==="historial"   && esAdmin && <VistaHistorial   registros={registros} onEditar={editarRegistro} onEliminar={eliminarRegistro} t={t} modoOscuro={modoOscuro}/>}
+          {vista==="historial"   && esAdmin && <VistaHistorial   registros={registros} onEditar={editarRegistro} onEliminar={eliminarRegistro} etiquetas={etiquetas} t={t} modoOscuro={modoOscuro}/>}
           {vista==="compromisos" && esAdmin && <VistaCompromisos compromisos={compromisos} onGuardar={guardarComps} t={t} modoOscuro={modoOscuro}/>}
           {vista==="bonos"       && esAdmin && <VistaBonos       registros={registros} t={t} modoOscuro={modoOscuro}/>}
-          {vista==="config"      && esAdmin && <VistaConfig      modoOscuro={modoOscuro} claves={claves} onGuardarClaves={guardarClaves} estados={estados} onGuardarEstados={guardarEstados} t={t}/>}
+          {vista==="config"      && esAdmin && <VistaConfig      modoOscuro={modoOscuro} claves={claves} onGuardarClaves={guardarClaves} estados={estados} onGuardarEstados={guardarEstados} etiquetas={etiquetas} onGuardarEtiquetas={guardarEtiquetas} t={t}/>}
           {vista==="clave"       && <VistaCambiarClave usuario={usuario} claves={claves} onGuardar={guardarClaves} t={t} modoOscuro={modoOscuro} onVolver={()=>setVista("registro")}/>}
           {vista==="ranking"     && !esAdmin && <VistaRankingEmpleado registros={registros} usuario={usuario} t={t} modoOscuro={modoOscuro}/>}
+          {vista==="finanzasivan"&& usuario.id==="ivan" && <VistaFinanzasIvan finanzas={finanzasIvan} onAgregar={agregarFinanzaIvan} onEliminar={eliminarFinanzaIvan} t={t} modoOscuro={modoOscuro}/>}
         </div>
       </main>
 
@@ -900,6 +953,7 @@ export default function App() {
       <div className="mobile-bottom-nav">
         <BottomNav
           esAdmin={esAdmin}
+          usuario={usuario}
           vista={vista}
           setVista={(v)=>{ playSound("nav"); setVista(v); }}
           alertas={alertas}
@@ -922,6 +976,7 @@ function Header({esAdmin,usuario,vista,setVista,alertas,modoOscuro,toggleModo,on
     {id:"historial",  icon:"list",      label:"Historial"},
     {id:"bonos",      icon:"trophy",    label:"Bonos"},
     {id:"compromisos",icon:"repeat",    label:"Compromisos", badge: alertas.length},
+    ...(usuario.id==="ivan" ? [{id:"finanzasivan", icon:"wallet", label:"Mi Caja"}] : []),
     {id:"config",     icon:"settings",  label:"Config"},
   ];
   const navItemsEmpleado = [
@@ -2263,7 +2318,7 @@ function Login({onLogin, claves, estados, t, modoOscuro, toggleModo}){
 }
 
 // ─── VISTA REGISTRO ───────────────────────────────────────────────────────────
-function VistaRegistro({usuario,onRegistrar,registros,t,modoOscuro}){
+function VistaRegistro({usuario,onRegistrar,registros,etiquetas,t,modoOscuro}){
   const esAdmin = usuario.role==="admin";
   const [paso,setPaso]          = useState(0);
   const [tipo,setTipo]          = useState("");
@@ -2276,6 +2331,7 @@ function VistaRegistro({usuario,onRegistrar,registros,t,modoOscuro}){
   const [exito,setExito]        = useState(null);
   const [fade,setFade]          = useState(true);
   const [registrando,setRegistrando] = useState(false);
+  const registrandoRef = useRef(false); // guarda sincrónica: evita registros duplicados al presionar Enter varias veces seguidas
 
   const pasos = getPasos(esAdmin, tipo);
   const mediosDisp = esAdmin ? (localSel ? MEDIOS_LOCAL[localSel] : []) : usuario.medios;
@@ -2306,13 +2362,21 @@ function VistaRegistro({usuario,onRegistrar,registros,t,modoOscuro}){
   };
 
   const registrar = () => {
-    if(registrando) return; // bloquear doble registro
+    // FIX bug de doble registro: el listener de "Enter" (más abajo) se re-crea
+    // solo cuando cambian ciertos valores del formulario, NO cuando cambia
+    // `registrando`. Por eso, si alguien presiona Enter varias veces muy rápido,
+    // el chequeo `if(registrando)` podía seguir leyendo un valor viejo (false) y
+    // se guardaban ventas duplicadas. Un useRef se actualiza al instante (sin
+    // esperar el re-render), así que sirve de candado real aunque el listener
+    // haya quedado desactualizado.
+    if(registrandoRef.current) return;
+    registrandoRef.current = true;
     setRegistrando(true);
     const reg = {tipo, localSel:esAdmin?localSel:undefined, medio, categoria,
       monto:parseFloat(monto), nota:nota||"", autoriza:tipo==="egreso"?autoriza:""};
     const nuevo = onRegistrar(reg);
     playSound(tipo==="ingreso"?"ingreso_ok":"egreso_ok"); setExito(nuevo);
-    setTimeout(()=>{reset();setExito(null);setRegistrando(false);},2800);
+    setTimeout(()=>{reset();setExito(null);setRegistrando(false);registrandoRef.current=false;},2800);
   };
 
   useEffect(()=>{
@@ -2498,7 +2562,7 @@ function VistaRegistro({usuario,onRegistrar,registros,t,modoOscuro}){
 
         {paso===pasos.cat && (
           <Paso titulo={tipo==="ingreso"?"¿Qué servicio prestaste?":"¿Tipo de gasto?"} sub="Presiona el número" t={t}>
-            {(tipo==="ingreso"?CATEGORIAS_INGRESO:CATEGORIAS_EGRESO).map((c,i)=>(
+            {(tipo==="ingreso"?etiquetas.ingreso:etiquetas.egreso).map((c,i)=>(
               <OpcionBtn t={t} modoOscuro={modoOscuro} key={c} num={i+1} label={c}
                 icon={tipo==="ingreso"?"trending":"arrow_down"}
                 color={tipo==="ingreso"?t.acento:t.naranja} small
@@ -2703,6 +2767,10 @@ function VistaRankingEmpleado({registros,usuario,t,modoOscuro}){
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function VistaDashboard({registros,t,modoOscuro}){
   const [periodo,setPeriodo]=useState("hoy");
+  const [desde,setDesde]=useState("");
+  const [hasta,setHasta]=useState("");
+  const [localSel,setLocalSel]=useState("todos");
+  const [colabSel,setColabSel]=useState("todos");
   const hoyISO=fechaISO();
   const hace7=getLocalDate(); hace7.setDate(hace7.getDate()-6);
   const hace30=getLocalDate(); hace30.setDate(hace30.getDate()-29);
@@ -2714,10 +2782,15 @@ function VistaDashboard({registros,t,modoOscuro}){
     if(periodo==="hoy")    return r.fechaISO===hoyISO;
     if(periodo==="semana") return r.fechaISO >= hace7ISO;
     if(periodo==="mes")    return r.fechaISO >= hace30ISO;
+    if(periodo==="rango")  return (!desde||r.fechaISO>=desde) && (!hasta||r.fechaISO<=hasta);
     return true;
   };
-  const regsAll=registros.filter(filtrar);
+  const regsPeriodo=registros.filter(filtrar); // solo filtrado por fecha — se usa en el cuadre por local, que siempre debe mostrar ambos locales completos
+  const regsAll=regsPeriodo.filter(r=> localSel==="todos"||r.local===localSel).filter(r=> colabSel==="todos"||r.usuario===colabSel);
   const regs=regsAll.filter(r=>r.categoria!=="Conversión de medio");
+  const nombresFiltro = [...new Set(Object.values(USUARIOS_BASE).map(u=>u.nombre))];
+  const hayFiltrosActivos = periodo!=="hoy" || localSel!=="todos" || colabSel!=="todos";
+  const limpiarFiltros = () => { setPeriodo("hoy"); setDesde(""); setHasta(""); setLocalSel("todos"); setColabSel("todos"); };
   const ingTotal=regs.filter(r=>r.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
   const egrTotal=regs.filter(r=>r.tipo==="egreso").reduce((a,b)=>a+b.monto,0);
   const caja=ingTotal-egrTotal;
@@ -2725,7 +2798,7 @@ function VistaDashboard({registros,t,modoOscuro}){
 
   // Cuadre por local/medio (histórico completo incluyendo conversiones)
   const cuadre=(local,medio)=>{
-    const base=regsAll.filter(r=>r.local===local&&r.medio===medio);
+    const base=regsPeriodo.filter(r=>r.local===local&&r.medio===medio);
     const ing=base.filter(r=>r.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
     const egr=base.filter(r=>r.tipo==="egreso").reduce((a,b)=>a+b.monto,0);
     return {ing,egr,neto:ing-egr};
@@ -2752,19 +2825,52 @@ function VistaDashboard({registros,t,modoOscuro}){
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-        <Icon name="filter" size={14} color={t.textoMuted}/>
-        {[["hoy","Hoy"],["semana","7 días"],["mes","30 días"],["todo","Todo"]].map(([k,l])=>(
-          <button key={k} className="neo-btn" style={{
-            background: periodo===k?(modoOscuro?"rgba(56,189,248,0.12)":"rgba(2,132,199,0.1)"):t.surface,
-            border: `1px solid ${periodo===k?t.borderActivo:t.border}`,
-            color: periodo===k?t.acento:t.textoMuted,
-            padding:"7px 14px",borderRadius:10,cursor:"pointer",fontSize:12,
-            fontWeight: periodo===k?700:500,
-            boxShadow: periodo===k?t.sombraBtnActivo:t.sombraBtn,
-            transition:"all .15s",
-          }} onClick={()=>setPeriodo(k)}>{l}</button>
-        ))}
+      <div style={{...card(t),borderRadius:14,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          <Icon name="filter" size={14} color={t.textoMuted}/>
+          {[["hoy","Hoy"],["semana","7 días"],["mes","30 días"],["rango","Rango"],["todo","Todo"]].map(([k,l])=>(
+            <button key={k} className="neo-btn" style={{
+              background: periodo===k?(modoOscuro?"rgba(56,189,248,0.12)":"rgba(2,132,199,0.1)"):t.surface,
+              border: `1px solid ${periodo===k?t.borderActivo:t.border}`,
+              color: periodo===k?t.acento:t.textoMuted,
+              padding:"7px 14px",borderRadius:10,cursor:"pointer",fontSize:12,
+              fontWeight: periodo===k?700:500,
+              boxShadow: periodo===k?t.sombraBtnActivo:t.sombraBtn,
+              transition:"all .15s",
+            }} onClick={()=>setPeriodo(k)}>{l}</button>
+          ))}
+          {hayFiltrosActivos && (
+            <button className="neo-btn" style={{
+              marginLeft:"auto",background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.25)",color:"#f87171",
+              padding:"6px 12px",borderRadius:10,cursor:"pointer",fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:5,
+            }} onClick={limpiarFiltros}><Icon name="x" size={12} color="#f87171"/> Limpiar filtros</button>
+          )}
+        </div>
+
+        {periodo==="rango" && (
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+            <div><label style={labelStyle(t)}>Desde</label><input type="date" style={inputStyle(t,modoOscuro)} value={desde} onChange={e=>setDesde(e.target.value)}/></div>
+            <div><label style={labelStyle(t)}>Hasta</label><input type="date" style={inputStyle(t,modoOscuro)} value={hasta} onChange={e=>setHasta(e.target.value)}/></div>
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{minWidth:160}}>
+            <label style={labelStyle(t)}>Local</label>
+            <select style={inputStyle(t,modoOscuro)} value={localSel} onChange={e=>setLocalSel(e.target.value)}>
+              <option value="todos">Todos los locales</option>
+              <option value="internet52">Internet La 52</option>
+              <option value="tramites">Trámites y Servicios</option>
+            </select>
+          </div>
+          <div style={{minWidth:160}}>
+            <label style={labelStyle(t)}>Colaborador</label>
+            <select style={inputStyle(t,modoOscuro)} value={colabSel} onChange={e=>setColabSel(e.target.value)}>
+              <option value="todos">Todos</option>
+              {nombresFiltro.map(n=><option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
@@ -2865,7 +2971,7 @@ function VistaDashboard({registros,t,modoOscuro}){
 }
 
 // ─── HISTORIAL (rediseñado: filas compactas, filtros avanzados) ───────────────
-function VistaHistorial({registros,onEditar,onEliminar,t,modoOscuro}){
+function VistaHistorial({registros,onEditar,onEliminar,etiquetas,t,modoOscuro}){
   const [filtLocal, setFiltLocal]   = useState("todos");
   const [filtTipo,  setFiltTipo]    = useState("todos");
   const [filtMedio, setFiltMedio]   = useState("todos");
@@ -3017,7 +3123,7 @@ function VistaHistorial({registros,onEditar,onEliminar,t,modoOscuro}){
                   <div>
                     <label style={labelStyle(t)}>Nueva categoría {campos.categoria!==camposOriginales.categoria&&<span style={{color:t.acento,fontSize:10}}>✱ cambiado</span>}</label>
                     <select style={inputStyle(t,modoOscuro)} value={campos.categoria} onChange={e=>setCampos({...campos,categoria:e.target.value})}>
-                      {(r.tipo==="ingreso"?CATEGORIAS_INGRESO:CATEGORIAS_EGRESO).map(c=><option key={c}>{c}</option>)}
+                      {(r.tipo==="ingreso"?etiquetas.ingreso:etiquetas.egreso).map(c=><option key={c}>{c}</option>)}
                     </select>
                   </div>
                   <div style={{gridColumn:"1/-1"}}>
@@ -3090,6 +3196,7 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
   const [editId,setEditId]=useState(null);
 
   const hoyNum=getLocalDate().getDate();
+  const mesActual=fechaISO().slice(0,7); // "YYYY-MM" — para saber si el pago marcado es del mes en curso
   const diasRestantes=(dia)=>{ const d=dia-hoyNum; return d<0 ? d+30 : d; };
   const guardar=()=>{
     if(!form.nombre||!form.valor) return;
@@ -3097,16 +3204,23 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
       onGuardar(compromisos.map(c=>c.id===editId?{...form,id:editId,valor:parseFloat(form.valor)}:c));
       setEditId(null);
     } else {
-      onGuardar([...compromisos,{...form,id:Date.now(),valor:parseFloat(form.valor)}]);
+      onGuardar([...compromisos,{...form,id:Date.now(),valor:parseFloat(form.valor),pagado:false,pagadoMes:null}]);
     }
     setForm({nombre:"",local:"internet52",medio:"Efectivo",dia:1,valor:"",nota:""});
   };
   const eliminar=(id)=>onGuardar(compromisos.filter(c=>c.id!==id));
   const editar=(c)=>{ setForm({...c,valor:String(c.valor)}); setEditId(c.id); };
+  // Marcar/desmarcar como pagado — queda ligado al mes en curso, así el próximo mes vuelve a aparecer pendiente automáticamente
+  const marcarPagado=(c)=>{
+    const estaPagadoAhora = c.pagado && c.pagadoMes===mesActual;
+    playSound(estaPagadoAhora?"click":"success");
+    onGuardar(compromisos.map(x=>x.id===c.id?{...x,pagado:!estaPagadoAhora,pagadoMes:!estaPagadoAhora?mesActual:null}:x));
+  };
   const totalMensual=compromisos.reduce((a,b)=>a+b.valor,0);
-  const todosOrdenados=[...compromisos].map(c=>({...c,dias:diasRestantes(c.dia)})).sort((a,b)=>a.dias-b.dias);
+  const todosOrdenados=[...compromisos].map(c=>({...c,dias:diasRestantes(c.dia),pagadoEsteMes:c.pagado&&c.pagadoMes===mesActual})).sort((a,b)=>a.dias-b.dias);
 
-  const colorUrg=(dias)=>{
+  const colorUrg=(dias,pagadoEsteMes)=>{
+    if(pagadoEsteMes) return {bg:"rgba(52,211,153,0.10)",borde:"#34d39988",texto:"#6ee7b7",badge:"#34d399"};
     if(dias===0) return {bg:"rgba(239,68,68,0.15)",borde:"#ef4444",texto:"#fca5a5",badge:"#ef4444"};
     if(dias<=2)  return {bg:"rgba(239,68,68,0.08)",borde:"#ef444488",texto:"#fca5a5",badge:"#ef4444"};
     if(dias<=5)  return {bg:"rgba(245,158,11,0.08)",borde:"#f59e0b88",texto:"#fcd34d",badge:"#f59e0b"};
@@ -3132,18 +3246,23 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
       </div>
       {lista.length===0&&<div style={{color:t.textoMin,textAlign:"center",padding:"14px 0",fontSize:13}}>Sin compromisos registrados</div>}
       {lista.map(c=>{
-        const urg=colorUrg(c.dias);
+        const urg=colorUrg(c.dias,c.pagadoEsteMes);
         return(
-          <div key={c.id} style={{borderRadius:10,padding:"10px 14px",background:urg.bg,border:`1px solid ${urg.borde}`,marginBottom:8,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div key={c.id} style={{borderRadius:10,padding:"10px 14px",background:urg.bg,border:`1px solid ${urg.borde}`,marginBottom:8,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",opacity:c.pagadoEsteMes?0.85:1}}>
             <div style={{background:urg.badge+"22",border:`1px solid ${urg.badge}44`,borderRadius:6,padding:"3px 8px",fontWeight:700,fontSize:11,color:urg.badge,flexShrink:0,minWidth:42,textAlign:"center"}}>
-              {c.dias===0?"Hoy":c.dias===1?"Mañana":`${c.dias}d`}
+              {c.pagadoEsteMes?"Pagado":c.dias===0?"Hoy":c.dias===1?"Mañana":`${c.dias}d`}
             </div>
             <div style={{flex:1}}>
-              <div style={{fontWeight:700,fontSize:13,color:t.texto}}>{c.nombre}</div>
+              <div style={{fontWeight:700,fontSize:13,color:t.texto,textDecoration:c.pagadoEsteMes?"line-through":"none"}}>{c.nombre}</div>
               <div style={{color:t.textoMuted,fontSize:11}}>{c.medio} · día {c.dia}{c.nota?` · ${c.nota}`:""}</div>
             </div>
-            <div style={{color:t.rojo,fontWeight:800,fontSize:14}}>{fmt(c.valor)}</div>
+            <div style={{color:c.pagadoEsteMes?t.verde:t.rojo,fontWeight:800,fontSize:14}}>{fmt(c.valor)}</div>
             <div style={{display:"flex",gap:5}}>
+              <button className="neo-btn" title={c.pagadoEsteMes?"Marcar como pendiente":"Marcar como pagado este mes"} style={{
+                background:c.pagadoEsteMes?"rgba(52,211,153,0.18)":(modoOscuro?"rgba(255,255,255,0.05)":"rgba(149,165,185,0.15)"),
+                border:`1.5px solid ${c.pagadoEsteMes?"#34d399":t.border}`,color:c.pagadoEsteMes?"#34d399":t.textoMuted,
+                padding:"4px 9px",borderRadius:6,cursor:"pointer",display:"flex",alignItems:"center",fontWeight:700,
+              }} onClick={()=>marcarPagado(c)}><Icon name="check" size={13} color={c.pagadoEsteMes?"#34d399":t.textoMuted}/></button>
               <button className="neo-btn" style={{...btnSecundario(t,modoOscuro),padding:"4px 8px"}} onClick={()=>editar(c)}><Icon name="edit" size={11}/></button>
               <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>eliminar(c.id)}><Icon name="trash" size={11}/></button>
             </div>
@@ -3203,6 +3322,148 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
             <Icon name="check" size={15}/> {editId!==null?"Actualizar":"Agregar"}
           </button>
           {editId!==null&&<button className="neo-btn" style={btnSecundario(t,modoOscuro)} onClick={()=>{setEditId(null);setForm({nombre:"",local:"internet52",medio:"Efectivo",dia:1,valor:"",nota:""});}}>Cancelar</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── FINANZAS PERSONALES DE IVÁN (separadas del negocio) ──────────────────────
+const CATS_FIN_IVAN_ING = ["Utilidad/pago del negocio","Otro ingreso personal"];
+const CATS_FIN_IVAN_EGR = ["Arriendo / Vivienda","Comida","Servicios (luz, agua, gas)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Ahorro / Patrimonio","Cuenta / Tarjeta","Otro gasto personal"];
+
+function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
+  const [tipo,setTipo]         = useState("ingreso");
+  const [categoria,setCategoria]= useState(CATS_FIN_IVAN_ING[0]);
+  const [monto,setMonto]       = useState("");
+  const [nota,setNota]         = useState("");
+  const [periodo,setPeriodo]   = useState("mes");
+
+  const hoyISO = fechaISO();
+  const hace7  = getLocalDate(); hace7.setDate(hace7.getDate()-6);
+  const hace30 = getLocalDate(); hace30.setDate(hace30.getDate()-29);
+  const hace7ISO  = hace7.toISOString().slice(0,10);
+  const hace30ISO = hace30.toISOString().slice(0,10);
+
+  const filtrar = (f) => {
+    if(periodo==="hoy")    return f.fechaISO===hoyISO;
+    if(periodo==="semana") return f.fechaISO>=hace7ISO;
+    if(periodo==="mes")    return f.fechaISO>=hace30ISO;
+    return true;
+  };
+  const vistas = finanzas.filter(filtrar);
+  const totalIng = vistas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
+  const totalEgr = vistas.filter(f=>f.tipo==="egreso").reduce((a,b)=>a+b.monto,0);
+  const saldo = totalIng - totalEgr;
+  const patrimonioTotal = finanzas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0) - finanzas.filter(f=>f.tipo==="egreso").reduce((a,b)=>a+b.monto,0);
+
+  const topGastos = Object.entries(vistas.filter(f=>f.tipo==="egreso").reduce((acc,f)=>{acc[f.categoria]=(acc[f.categoria]||0)+f.monto;return acc;},{})).sort((a,b)=>b[1]-a[1]);
+
+  const agregar = () => {
+    const n = parseFloat(String(monto).replace(/[^0-9.]/g,""));
+    if(!n||n<=0) return;
+    playSound(tipo==="ingreso"?"ingreso_ok":"egreso_ok");
+    onAgregar({tipo, categoria, monto:n, nota:nota||""});
+    setMonto(""); setNota("");
+  };
+
+  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(t2==="ingreso"?CATS_FIN_IVAN_ING[0]:CATS_FIN_IVAN_EGR[0]); };
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:760,margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{background:modoOscuro?"rgba(217,70,239,0.1)":"rgba(13,148,136,0.1)",border:`1px solid ${t.borderActivo}`,borderRadius:12,padding:12,display:"flex",boxShadow:t.sombraBtn}}>
+          <Icon name="wallet" size={24} color={t.acento}/>
+        </div>
+        <div>
+          <div style={{fontWeight:800,fontSize:17,color:t.texto}}>Mi Caja Personal</div>
+          <div style={{color:t.textoMuted,fontSize:12}}>Tus finanzas separadas del negocio — solo las ves tú</div>
+        </div>
+      </div>
+
+      <div style={{...card(t),borderRadius:14,padding:"16px",textAlign:"center",boxShadow:t.sombra}}>
+        <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Tu patrimonio acumulado (histórico completo)</div>
+        <div style={{color:patrimonioTotal>=0?t.verde:t.rojo,fontWeight:800,fontSize:26,marginTop:4}}>{fmt(patrimonioTotal)}</div>
+      </div>
+
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {[["hoy","Hoy"],["semana","7 días"],["mes","30 días"],["todo","Todo"]].map(([k,l])=>(
+          <button key={k} className="neo-btn" style={{
+            background: periodo===k?(modoOscuro?"rgba(56,189,248,0.12)":"rgba(2,132,199,0.1)"):t.surface,
+            border: `1px solid ${periodo===k?t.borderActivo:t.border}`,
+            color: periodo===k?t.acento:t.textoMuted,
+            padding:"7px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:periodo===k?700:500,
+            boxShadow: periodo===k?t.sombraBtnActivo:t.sombraBtn,
+          }} onClick={()=>setPeriodo(k)}>{l}</button>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
+        {[
+          {label:"Ingresó",  val:fmt(totalIng), color:t.verde},
+          {label:"Gastó",    val:fmt(totalEgr), color:t.rojo},
+          {label:"Saldo del período", val:fmt(saldo), color:saldo>=0?t.amarillo:t.rojo},
+        ].map(k=>(
+          <div key={k.label} style={{...card(t),borderRadius:14,padding:"16px",textAlign:"center"}}>
+            <div style={{color:k.color,fontSize:18,fontWeight:800}}>{k.val}</div>
+            <div style={{color:t.textoMuted,fontSize:11,marginTop:4,textTransform:"uppercase",letterSpacing:.5}}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Formulario nuevo movimiento */}
+      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Nuevo movimiento personal</div>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+            background:tipo==="ingreso"?"rgba(52,211,153,0.12)":t.surface, border:`1.5px solid ${tipo==="ingreso"?"#34d399":t.border}`,color:tipo==="ingreso"?t.verde:t.textoMuted,
+          }} onClick={()=>cambiarTipo("ingreso")}>+ Ingreso</button>
+          <button className="neo-btn" style={{flex:1,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
+            background:tipo==="egreso"?"rgba(248,113,113,0.12)":t.surface, border:`1.5px solid ${tipo==="egreso"?"#f87171":t.border}`,color:tipo==="egreso"?t.rojo:t.textoMuted,
+          }} onClick={()=>cambiarTipo("egreso")}>- Gasto</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>
+            <label style={labelStyle(t)}>Categoría</label>
+            <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
+              {(tipo==="ingreso"?CATS_FIN_IVAN_ING:CATS_FIN_IVAN_EGR).map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
+          <div style={{gridColumn:"1 / -1"}}><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Mercado de la semana..."/></div>
+        </div>
+        <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"10px 24px",marginTop:14}} onClick={agregar}>
+          <Icon name="check" size={15}/> Guardar
+        </button>
+      </div>
+
+      {/* Top gastos personales del período */}
+      {topGastos.length>0 && (
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>En qué se te va la plata</div>
+          {topGastos.map(([cat,val])=>(
+            <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.2)"}`}}>
+              <span style={{color:t.textoSub,fontSize:13}}>{cat}</span>
+              <span style={{color:t.rojo,fontWeight:600,fontSize:13}}>{fmt(val)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Historial */}
+      <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+        <div style={{fontWeight:700,fontSize:13,marginBottom:14,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Movimientos ({vistas.length})</div>
+        {vistas.length===0 && <div style={{color:t.textoMin,textAlign:"center",padding:24,fontSize:13}}>Sin movimientos en este período.</div>}
+        <div style={{maxHeight:400,overflowY:"auto"}}>
+          {vistas.map(f=>(
+            <div key={f.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:13,flexWrap:"wrap"}}>
+              <Icon name={f.tipo==="ingreso"?"arrow_up":"arrow_down"} size={13} color={f.tipo==="ingreso"?t.verde:t.rojo}/>
+              <span style={{flex:1,color:t.textoSub,minWidth:140}}>{f.categoria}{f.nota?` · ${f.nota}`:""}</span>
+              <span style={{color:f.tipo==="ingreso"?t.verde:t.rojo,fontWeight:700}}>{f.tipo==="egreso"?"-":""}{fmt(f.monto)}</span>
+              <span style={{color:t.textoMin,fontSize:11}}>{f.fechaISO}</span>
+              <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminar(f.id)}><Icon name="trash" size={11}/></button>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -3460,7 +3721,73 @@ function VistaUsuarios({claves, onGuardarClaves, estados, onGuardarEstados, t, m
 }
 
 // ─── CONFIGURACIÓN (admin) ────────────────────────────────────────────────────
-function VistaConfig({modoOscuro,claves,onGuardarClaves,estados,onGuardarEstados,t}){
+// ─── ETIQUETAS (categorías configurables de ingresos y gastos) ───────────────
+function VistaEtiquetas({etiquetas, onGuardarEtiquetas, t, modoOscuro}){
+  const [nuevaIng, setNuevaIng] = useState("");
+  const [nuevaEgr, setNuevaEgr] = useState("");
+  const [msg, setMsg] = useState(null);
+
+  const avisar = (texto) => { setMsg(texto); setTimeout(()=>setMsg(null), 2500); };
+
+  const agregar = (tipo, valor, setValor) => {
+    const v = valor.trim();
+    if(!v) return;
+    if(etiquetas[tipo].some(e=>e.toLowerCase()===v.toLowerCase())){ avisar("Esa etiqueta ya existe"); return; }
+    playSound("success");
+    onGuardarEtiquetas({...etiquetas, [tipo]:[...etiquetas[tipo], v]});
+    setValor("");
+  };
+  const quitar = (tipo, valor) => {
+    playSound("click");
+    onGuardarEtiquetas({...etiquetas, [tipo]: etiquetas[tipo].filter(e=>e!==valor)});
+  };
+
+  const Lista = ({tipo, titulo, color, nuevoValor, setNuevoValor}) => (
+    <div style={{background:modoOscuro?"rgba(15,23,42,0.55)":"rgba(218,227,240,0.5)",borderRadius:14,padding:"14px 16px",flex:1,minWidth:240}}>
+      <div style={{fontWeight:700,fontSize:12,color:color,marginBottom:10,textTransform:"uppercase",letterSpacing:.5}}>{titulo}</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+        {etiquetas[tipo].map(e=>(
+          <span key={e} style={{background:modoOscuro?"rgba(255,255,255,0.05)":"rgba(255,255,255,0.6)",border:`1px solid ${t.border}`,borderRadius:20,padding:"5px 8px 5px 12px",fontSize:12,color:t.textoSub,display:"flex",alignItems:"center",gap:6}}>
+            {e}
+            <button className="neo-btn" onClick={()=>quitar(tipo,e)} style={{background:"none",border:"none",cursor:"pointer",color:t.textoMuted,display:"flex",padding:2}}>
+              <Icon name="x" size={11} color={t.textoMuted}/>
+            </button>
+          </span>
+        ))}
+        {etiquetas[tipo].length===0 && <span style={{color:t.textoMin,fontSize:12}}>Sin etiquetas</span>}
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <input style={{...inputStyle(t,modoOscuro),flex:1}} value={nuevoValor} onChange={e=>setNuevoValor(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&agregar(tipo,nuevoValor,setNuevoValor)} placeholder="Nueva etiqueta..."/>
+        <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"8px 14px"}} onClick={()=>agregar(tipo,nuevoValor,setNuevoValor)}>
+          <Icon name="plus" size={14}/>
+        </button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+      <div style={{fontWeight:700,fontSize:13,marginBottom:4,color:t.textoSub,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:.5}}>
+        <Icon name="box" size={15} color={t.textoSub}/> Etiquetas de ingresos y gastos
+      </div>
+      <p style={{color:t.textoMuted,fontSize:13,margin:"8px 0 16px",lineHeight:1.5}}>
+        Estas son las opciones que ven los colaboradores al registrar una venta o un gasto. Agrega o quita las que necesites — los registros ya guardados no se ven afectados.
+      </p>
+      {msg && (
+        <div style={{background:modoOscuro?"rgba(248,113,113,0.08)":"rgba(220,38,38,0.08)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:10,padding:"8px 14px",marginBottom:14,fontSize:13,color:t.rojo,fontWeight:600}}>
+          {msg}
+        </div>
+      )}
+      <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+        <Lista tipo="ingreso" titulo="Ingresos / Servicios" color={t.verde} nuevoValor={nuevaIng} setNuevoValor={setNuevaIng}/>
+        <Lista tipo="egreso"  titulo="Gastos"               color={t.rojo}  nuevoValor={nuevaEgr} setNuevoValor={setNuevaEgr}/>
+      </div>
+    </div>
+  );
+}
+
+function VistaConfig({modoOscuro,claves,onGuardarClaves,estados,onGuardarEstados,etiquetas,onGuardarEtiquetas,t}){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:720,margin:"0 auto"}}>
       {/* Header */}
@@ -3470,12 +3797,15 @@ function VistaConfig({modoOscuro,claves,onGuardarClaves,estados,onGuardarEstados
         </div>
         <div>
           <div style={{fontWeight:800,fontSize:17,color:t.texto}}>Configuración</div>
-          <div style={{color:t.textoMuted,fontSize:12}}>Apariencia · Usuarios · Sistema</div>
+          <div style={{color:t.textoMuted,fontSize:12}}>Apariencia · Usuarios · Etiquetas · Sistema</div>
         </div>
       </div>
 
       {/* Gestión de usuarios inline */}
       <VistaUsuarios claves={claves} onGuardarClaves={onGuardarClaves} estados={estados} onGuardarEstados={onGuardarEstados} t={t} modoOscuro={modoOscuro}/>
+
+      {/* Gestión de etiquetas de ingresos/gastos */}
+      <VistaEtiquetas etiquetas={etiquetas} onGuardarEtiquetas={onGuardarEtiquetas} t={t} modoOscuro={modoOscuro}/>
 
       {/* Info sistema */}
       <div style={{...card(t),borderRadius:14,padding:"16px 18px",boxShadow:t.sombraBtn}}>
@@ -3717,13 +4047,14 @@ function ToastNotif({notifs, onDismiss, modoOscuro}) {
 }
 
 // ─── BOTTOM NAV MÓVIL ─────────────────────────────────────────────────────────
-function BottomNav({esAdmin, vista, setVista, alertas, t, modoOscuro}) {
+function BottomNav({esAdmin, usuario, vista, setVista, alertas, t, modoOscuro}) {
   const navItemsAdmin = [
     {id:"registro",   icon:"plus",      label:"Registrar"},
     {id:"dashboard",  icon:"chart",     label:"Dashboard"},
     {id:"historial",  icon:"list",      label:"Historial"},
     {id:"bonos",      icon:"trophy",    label:"Bonos"},
     {id:"compromisos",icon:"repeat",    label:"Compromisos", badge: alertas.length},
+    ...(usuario?.id==="ivan" ? [{id:"finanzasivan", icon:"wallet", label:"Mi Caja"}] : []),
     {id:"config",     icon:"settings",  label:"Config"},
   ];
   const navItemsEmpleado = [
