@@ -314,13 +314,13 @@ const dbGetFinanzasIvan = async () => {
   try {
     const { data, error } = await supabase.from("finanzas_ivan").select("*").order("fecha_iso", { ascending: false }).order("creado_en", { ascending: false });
     if (error || !data) return [];
-    return data.map(f => ({ id: f.id, tipo: f.tipo, categoria: f.categoria, monto: Number(f.monto), nota: f.nota||"", fechaISO: f.fecha_iso }));
+    return data.map(f => ({ id: f.id, tipo: f.tipo, categoria: f.categoria, monto: Number(f.monto), nota: f.nota||"", fechaISO: f.fecha_iso, titular: f.titular||null }));
   } catch(e) { console.error("dbGetFinanzasIvan:", e); return []; }
 };
 const dbInsertFinanzaIvan = async (f) => {
   try {
     const { error } = await supabase.from("finanzas_ivan").insert({
-      id: f.id, tipo: f.tipo, categoria: f.categoria, monto: f.monto, nota: f.nota||"", fecha_iso: f.fechaISO,
+      id: f.id, tipo: f.tipo, categoria: f.categoria, monto: f.monto, nota: f.nota||"", fecha_iso: f.fechaISO, titular: f.titular||null,
     });
     if (error) console.error("dbInsertFinanzaIvan:", error);
   } catch(e) { console.error("dbInsertFinanzaIvan:", e); }
@@ -3330,16 +3330,18 @@ function VistaCompromisos({compromisos,onGuardar,t,modoOscuro}){
 
 // ─── FINANZAS PERSONALES DE IVÁN (separadas del negocio) ──────────────────────
 // Modelo distinto al del negocio: acá no solo hay "ventas" y "gastos", sino
-// también "ahorro" (plata que se guarda/invierte, no se gasta). Así se puede
-// ver de verdad el patrimonio guardado y cuánto queda libre para gastar o invertir.
+// también "ahorro" (plata que se guarda/invierte, no se gasta), y el ahorro se
+// lleva por CUENTA y por TITULAR (Iván o Laura), porque el dinero de ambos se
+// guarda en efectivo y en cuentas separadas. Solo Iván ve esta pantalla.
 const CATS_FIN_ING    = ["Utilidad del negocio","Sueldo / trabajo independiente","Arriendo que recibo","Ventas personales","Regalo o ayuda","Otro ingreso"];
 const CATS_FIN_GASTO  = ["Vivienda / Arriendo","Comida","Servicios (luz, agua, gas, internet)","Transporte","Salud","Mathías (hijo)","Ropa","Ocio / Diversión","Deudas / Pagos","Otro gasto"];
-const CATS_FIN_AHORRO = ["Cuenta bancaria","Efectivo guardado","Inversión","Cartera / Fondo","Otro ahorro"];
 const esGasto = (f) => f.tipo==="gasto" || f.tipo==="egreso"; // "egreso" queda como alias por compatibilidad
 
 function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
   const [tipo,setTipo]          = useState("ingreso");
   const [categoria,setCategoria]= useState(CATS_FIN_ING[0]);
+  const [titular,setTitular]    = useState("Iván");
+  const [cuenta,setCuenta]      = useState("");
   const [monto,setMonto]        = useState("");
   const [nota,setNota]          = useState("");
   const [periodo,setPeriodo]    = useState("mes");
@@ -3358,9 +3360,18 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
     return true;
   };
   const vistas = finanzas.filter(filtrar);
+  const movsAhorro = finanzas.filter(f=>f.tipo==="ahorro"); // histórico completo, no depende del período
 
-  // Lo guardado es histórico completo (no depende del período que estés mirando)
-  const guardadoTotal = finanzas.filter(f=>f.tipo==="ahorro").reduce((a,b)=>a+b.monto,0);
+  // Saldo por cuenta y por titular (histórico completo — es lo que hay HOY en cada cuenta)
+  const cuentasPorTitular = {};
+  movsAhorro.forEach(f=>{
+    const tit = f.titular || "Sin asignar";
+    const cta = f.categoria || "Sin nombre";
+    cuentasPorTitular[tit] = cuentasPorTitular[tit] || {};
+    cuentasPorTitular[tit][cta] = (cuentasPorTitular[tit][cta]||0) + f.monto;
+  });
+  const guardadoTotal = movsAhorro.reduce((a,b)=>a+b.monto,0);
+  const nombresCuentasPrevias = [...new Set(movsAhorro.filter(f=>f.titular===titular).map(f=>f.categoria))];
 
   const ingPeriodo    = vistas.filter(f=>f.tipo==="ingreso").reduce((a,b)=>a+b.monto,0);
   const gastoPeriodo  = vistas.filter(esGasto).reduce((a,b)=>a+b.monto,0);
@@ -3369,17 +3380,21 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
 
   const topGastos = Object.entries(vistas.filter(esGasto).reduce((acc,f)=>{acc[f.categoria]=(acc[f.categoria]||0)+f.monto;return acc;},{})).sort((a,b)=>b[1]-a[1]);
 
-  const catsDe = (t2) => t2==="ingreso" ? CATS_FIN_ING : t2==="ahorro" ? CATS_FIN_AHORRO : CATS_FIN_GASTO;
+  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(t2==="ingreso"?CATS_FIN_ING[0]:CATS_FIN_GASTO[0]); setCuenta(""); };
 
   const agregar = () => {
-    const n = parseFloat(String(monto).replace(/[^0-9.]/g,""));
-    if(!n||n<=0) return;
+    const n = parseFloat(String(monto).replace(/[^0-9.\-]/g,""));
+    if(!n || (tipo!=="ahorro" && n<=0)) return;
+    if(tipo==="ahorro" && !cuenta.trim()) return;
     playSound(tipo==="ingreso"?"ingreso_ok":tipo==="ahorro"?"success":"egreso_ok");
-    onAgregar({tipo, categoria, monto:n, nota:nota||""});
+    if(tipo==="ahorro"){
+      onAgregar({tipo, categoria:cuenta.trim(), titular, monto:n, nota:nota||""});
+      setCuenta("");
+    } else {
+      onAgregar({tipo, categoria, monto:n, nota:nota||""});
+    }
     setMonto(""); setNota("");
   };
-
-  const cambiarTipo = (t2) => { setTipo(t2); setCategoria(catsDe(t2)[0]); };
 
   const simN = parseFloat(String(simMonto).replace(/[^0-9.]/g,""))||0;
   const simAlcanza = simN>0 && simN<=libre;
@@ -3394,15 +3409,38 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
         </div>
         <div>
           <div style={{fontWeight:800,fontSize:17,color:t.texto}}>Mis Finanzas Personales</div>
-          <div style={{color:t.textoMuted,fontSize:12}}>Separado del negocio · acepta ingresos de cualquier fuente</div>
+          <div style={{color:t.textoMuted,fontSize:12}}>Privado — solo tú ves esto, ni Laura ni nadie más</div>
         </div>
       </div>
 
       {/* Hero: lo guardado */}
       <div style={{...card(t),borderRadius:16,padding:"22px",textAlign:"center",boxShadow:t.sombra,background:modoOscuro?"linear-gradient(145deg, rgba(167,139,250,0.08), rgba(28,18,44,0.6))":"linear-gradient(145deg, rgba(167,139,250,0.08), rgba(255,255,255,0.5))"}}>
-        <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Lo que tienes guardado (cuentas, efectivo, inversiones)</div>
+        <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Lo que hay guardado entre todas las cuentas</div>
         <div style={{color:t.morado,fontWeight:800,fontSize:30,marginTop:6}}>{fmt(guardadoTotal)}</div>
       </div>
+
+      {/* Desglose por titular y cuenta */}
+      {Object.keys(cuentasPorTitular).length>0 && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12}}>
+          {Object.entries(cuentasPorTitular).map(([tit,cuentasObj])=>{
+            const subtotal = Object.values(cuentasObj).reduce((a,b)=>a+b,0);
+            return(
+              <div key={tit} style={{...card(t),borderRadius:14,padding:"14px 16px",borderTop:`3px solid ${tit==="Iván"?t.acento:t.morado}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <span style={{fontWeight:700,fontSize:13,color:t.texto}}>{tit}</span>
+                  <span style={{fontWeight:800,fontSize:14,color:tit==="Iván"?t.acento:t.morado}}>{fmt(subtotal)}</span>
+                </div>
+                {Object.entries(cuentasObj).map(([cta,val])=>(
+                  <div key={cta} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:12}}>
+                    <span style={{color:t.textoSub}}>{cta}</span>
+                    <span style={{color:t.textoMuted,fontWeight:600}}>{fmt(val)}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
         {[["hoy","Hoy"],["semana","7 días"],["mes","30 días"],["todo","Todo"]].map(([k,l])=>(
@@ -3485,18 +3523,44 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
           }} onClick={()=>cambiarTipo("gasto")}>- Gasté</button>
           <button className="neo-btn" style={{flex:1,minWidth:90,padding:"10px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,
             background:tipo==="ahorro"?"rgba(167,139,250,0.15)":t.surface, border:`1.5px solid ${tipo==="ahorro"?"#a78bfa":t.border}`,color:tipo==="ahorro"?t.morado:t.textoMuted,
-          }} onClick={()=>cambiarTipo("ahorro")}>⬤ Guardé</button>
+          }} onClick={()=>cambiarTipo("ahorro")}>⬤ Cuenta / Ahorro</button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <div>
-            <label style={labelStyle(t)}>Categoría</label>
-            <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
-              {catsDe(tipo).map(c=><option key={c}>{c}</option>)}
-            </select>
+
+        {tipo==="ahorro" ? (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div>
+              <label style={labelStyle(t)}>¿De quién es esta plata?</label>
+              <select style={inputStyle(t,modoOscuro)} value={titular} onChange={e=>{setTitular(e.target.value);setCuenta("");}}>
+                <option value="Iván">Iván</option>
+                <option value="Laura">Laura</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle(t)}>Nombre de la cuenta</label>
+              <input style={inputStyle(t,modoOscuro)} list="cuentas-previas" value={cuenta} onChange={e=>setCuenta(e.target.value)} placeholder="Ej: Efectivo, Bancolombia, Nequi..."/>
+              <datalist id="cuentas-previas">
+                {nombresCuentasPrevias.map(c=><option key={c} value={c}/>)}
+              </datalist>
+            </div>
+            <div style={{gridColumn:"1 / -1"}}>
+              <label style={labelStyle(t)}>Valor (si sacaste plata de esa cuenta, pon un número negativo, ej: -50000)</label>
+              <input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/>
+            </div>
+            <div style={{gridColumn:"1 / -1"}}><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Aporte de la quincena..."/></div>
           </div>
-          <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
-          <div style={{gridColumn:"1 / -1"}}><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Mercado de la semana..."/></div>
-        </div>
+        ) : (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div>
+              <label style={labelStyle(t)}>Categoría</label>
+              <select style={inputStyle(t,modoOscuro)} value={categoria} onChange={e=>setCategoria(e.target.value)}>
+                {(tipo==="ingreso"?CATS_FIN_ING:CATS_FIN_GASTO).map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div><label style={labelStyle(t)}>Valor</label><input type="number" style={inputStyle(t,modoOscuro)} value={monto} onChange={e=>setMonto(e.target.value)} placeholder="0"/></div>
+            <div style={{gridColumn:"1 / -1"}}><label style={labelStyle(t)}>Nota (opcional)</label><input style={inputStyle(t,modoOscuro)} value={nota} onChange={e=>setNota(e.target.value)} placeholder="Ej: Mercado de la semana..."/></div>
+          </div>
+        )}
+
         <button className="neo-btn" style={{...btnPrimary(t),width:"auto",padding:"10px 24px",marginTop:14}} onClick={agregar}>
           <Icon name="check" size={15}/> Guardar
         </button>
@@ -3524,11 +3588,12 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, t, modoOscuro}){
             const gasto = esGasto(f);
             const color = f.tipo==="ingreso"?t.verde:f.tipo==="ahorro"?t.morado:t.rojo;
             const icono = f.tipo==="ingreso"?"arrow_up":f.tipo==="ahorro"?"lock":"arrow_down";
+            const etiqueta = f.tipo==="ahorro" ? `${f.titular||"Sin asignar"} · ${f.categoria}` : f.categoria;
             return(
               <div key={f.id} style={{display:"flex",gap:8,alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${modoOscuro?"rgba(255,255,255,0.04)":"rgba(149,165,185,0.18)"}`,fontSize:13,flexWrap:"wrap"}}>
                 <Icon name={icono} size={13} color={color}/>
-                <span style={{flex:1,color:t.textoSub,minWidth:140}}>{f.categoria}{f.nota?` · ${f.nota}`:""}</span>
-                <span style={{color,fontWeight:700}}>{gasto?"-":f.tipo==="ahorro"?"→ ":""}{fmt(f.monto)}</span>
+                <span style={{flex:1,color:t.textoSub,minWidth:140}}>{etiqueta}{f.nota?` · ${f.nota}`:""}</span>
+                <span style={{color:f.monto<0?t.rojo:color,fontWeight:700}}>{gasto?"-":""}{fmt(f.monto)}</span>
                 <span style={{color:t.textoMin,fontSize:11}}>{f.fechaISO}</span>
                 <button className="neo-btn" style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.2)",color:"#f87171",padding:"4px 8px",borderRadius:6,cursor:"pointer"}} onClick={()=>onEliminar(f.id)}><Icon name="trash" size={11}/></button>
               </div>
