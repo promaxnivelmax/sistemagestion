@@ -3683,15 +3683,27 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
       {/* ══════════════ RESUMEN ══════════════ */}
       {seccion==="resumen" && (<>
         <div style={{...card(t),borderRadius:16,padding:"22px",textAlign:"center",boxShadow:t.sombra}}>
-          <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Patrimonio familiar (después de deudas)</div>
-          <div style={{color:patrimonioFamiliar>=0?t.verde:t.rojo,fontWeight:800,fontSize:30,marginTop:6}}>{fmt(patrimonioFamiliar)}</div>
-          <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:12,flexWrap:"wrap"}}>
+          <div style={{color:t.textoMuted,fontSize:11,textTransform:"uppercase",letterSpacing:.5}}>Total en las cuentas (lo que hay hoy en todas las carteras, sin restar deudas)</div>
+          <div style={{color:t.texto,fontWeight:800,fontSize:32,marginTop:6}}>{fmt(calcIvan.patrimonioCarteras + calcLaura.patrimonioCarteras)}</div>
+          <div style={{color:t.textoMuted,fontSize:12,marginTop:10}}>Patrimonio neto (después de deudas): <b style={{color:patrimonioFamiliar>=0?t.verde:t.rojo}}>{fmt(patrimonioFamiliar)}</b></div>
+
+          <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:16,flexWrap:"wrap"}}>
             {PATR_PERSONAS.map(p=>{
               const c = p.id==="ivan"?calcIvan:calcLaura;
               return(
-                <div key={p.id} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",borderRadius:10,padding:"8px 16px",minWidth:140}}>
-                  <div style={{fontSize:11,color:colorPersona(p.id),fontWeight:700}}>{p.nombre}</div>
-                  <div style={{fontSize:15,fontWeight:800,color:t.texto}}>{fmt(c.patrimonioNeto)}</div>
+                <div key={p.id} style={{background:modoOscuro?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)",borderRadius:10,padding:"10px 18px",minWidth:170,textAlign:"left"}}>
+                  <div style={{fontSize:11,color:colorPersona(p.id),fontWeight:700,marginBottom:4}}>{p.nombre}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:t.textoMuted}}>
+                    <span>En cuentas</span><span style={{color:t.texto,fontWeight:700}}>{fmt(c.patrimonioCarteras)}</span>
+                  </div>
+                  {c.deudaPendiente>0 && (
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:t.textoMuted}}>
+                      <span>Debe</span><span style={{color:t.rojo,fontWeight:700}}>-{fmt(c.deudaPendiente)}</span>
+                    </div>
+                  )}
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginTop:4,paddingTop:4,borderTop:`1px solid ${t.border}`}}>
+                    <span style={{color:t.textoMuted}}>Neto</span><span style={{color:c.patrimonioNeto>=0?t.verde:t.rojo,fontWeight:800}}>{fmt(c.patrimonioNeto)}</span>
+                  </div>
                 </div>
               );
             })}
