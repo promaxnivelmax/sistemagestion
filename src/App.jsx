@@ -3816,6 +3816,15 @@ function VistaFinanzasIvan({finanzas, onAgregar, onEliminar, compromisosPersonal
       {/* ══════════════ GRÁFICAS ══════════════ */}
       {seccion==="graficas" && (<>
         <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:6,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Cómo se reparte el portafolio familiar (Iván + Laura, todas las carteras juntas)</div>
+          <p style={{color:t.textoMuted,fontSize:12,margin:"0 0 14px"}}>Cada cartera de cada persona, en una sola gráfica.</p>
+          <DonutChart t={t} modoOscuro={modoOscuro} size={170} data={[
+            ...Object.entries(calcIvan.saldos).map(([c,v])=>({label:`Iván · ${c}`, value:v})),
+            ...Object.entries(calcLaura.saldos).map(([c,v])=>({label:`Laura · ${c}`, value:v})),
+          ]}/>
+        </div>
+
+        <div style={{...card(t),borderRadius:16,padding:"18px 20px"}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:6,color:t.textoSub,textTransform:"uppercase",letterSpacing:.5}}>Iván vs Laura</div>
           <p style={{color:t.textoMuted,fontSize:12,margin:"0 0 14px"}}>Comparación directa, sin importar en qué pestaña de persona estés.</p>
           <BarComparacionDual t={t} data={[
