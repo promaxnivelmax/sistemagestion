@@ -362,13 +362,14 @@ const Icon = ({ name, size = 16, color = "currentColor" }) => {
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
 const USUARIOS_BASE = {
-  jeimy: { nombre:"Jeimy", local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:true  },
-  luis:  { nombre:"Luis",  local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:false },
-  laura: { nombre:"Laura", local:"tramites",   role:"admin", medios:["Efectivo","DaviPlata","Nequi"],  cuadre:true  },
-  luisa: { nombre:"Luisa", local:"tramites",   role:"empleado", medios:["Efectivo","DaviPlata"],  cuadre:false },
-  ivan:  { nombre:"Iván",  local:"ambos",      role:"admin",    medios:["Efectivo","Nequi","DaviPlata"], cuadre:false },
+  jeimy:  { nombre:"Jeimy",  local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:true  },
+  luis:   { nombre:"Luis",   local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:false },
+  sandra: { nombre:"Sandra", local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:false },
+  laura:  { nombre:"Laura",  local:"tramites",   role:"empleado", medios:["Efectivo","DaviPlata"],  cuadre:false },
+  luisa:  { nombre:"Luisa",  local:"internet52", role:"empleado", medios:["Efectivo","Nequi"],      cuadre:false },
+  ivan:   { nombre:"Iván",   local:"ambos",      role:"admin",    medios:["Efectivo","Nequi","DaviPlata"], cuadre:false },
 };
-const CLAVES_BASE = { jeimy:"1111", luis:"2222", laura:"3333", luisa:"4444", ivan:"0000" };
+const CLAVES_BASE = { jeimy:"1111", luis:"2222", sandra:"5555", laura:"3333", luisa:"4444", ivan:"0000" };
 
 const CATEGORIAS_INGRESO = ["Impresión","Fotocopia","Escáner","Trabajo en computador","Trámite en línea","Postulación","Envío de documentos","Otro ingreso"];
 const CATEGORIAS_EGRESO  = ["Papelería","Tóner / Tinta","Servicios públicos","Internet","Arriendo","Transporte","Alimentación","Mantenimiento equipo","Otro gasto"];
@@ -530,7 +531,7 @@ export default function App() {
   const [vista,        setVista]        = useState("registro");
   const [modoOscuro,   setModoOscuro]   = useState(true);
   const [claves,       setClaves]       = useState(CLAVES_BASE);
-  const [estados,      setEstados]      = useState({ jeimy:true, luis:true, laura:true, luisa:true, ivan:true });
+  const [estados,      setEstados]      = useState({ jeimy:true, luis:true, sandra:true, laura:true, luisa:true, ivan:true });
   const [cargando,     setCargando]     = useState(true);
   // Para control de sesión en múltiples pestañas
   const [otrasSesiones, setOtrasSesiones] = useState(false);
@@ -2276,6 +2277,7 @@ function VistaRegistro({usuario,onRegistrar,registros,t,modoOscuro}){
   const [exito,setExito]        = useState(null);
   const [fade,setFade]          = useState(true);
   const [registrando,setRegistrando] = useState(false);
+  const registrandoRef = useRef(false); // guarda sincrónica: evita registros duplicados al presionar Enter varias veces seguidas
 
   const pasos = getPasos(esAdmin, tipo);
   const mediosDisp = esAdmin ? (localSel ? MEDIOS_LOCAL[localSel] : []) : usuario.medios;
@@ -2306,13 +2308,21 @@ function VistaRegistro({usuario,onRegistrar,registros,t,modoOscuro}){
   };
 
   const registrar = () => {
-    if(registrando) return; // bloquear doble registro
+    // FIX bug de doble registro: el listener de "Enter" (más abajo) se re-crea
+    // solo cuando cambian ciertos valores del formulario, NO cuando cambia
+    // `registrando`. Por eso, si alguien presiona Enter varias veces muy rápido,
+    // el chequeo `if(registrando)` podía seguir leyendo un valor viejo (false) y
+    // se guardaban ventas duplicadas. Un useRef se actualiza al instante (sin
+    // esperar el re-render), así que sirve de candado real aunque el listener
+    // haya quedado desactualizado.
+    if(registrandoRef.current) return;
+    registrandoRef.current = true;
     setRegistrando(true);
     const reg = {tipo, localSel:esAdmin?localSel:undefined, medio, categoria,
       monto:parseFloat(monto), nota:nota||"", autoriza:tipo==="egreso"?autoriza:""};
     const nuevo = onRegistrar(reg);
     playSound(tipo==="ingreso"?"ingreso_ok":"egreso_ok"); setExito(nuevo);
-    setTimeout(()=>{reset();setExito(null);setRegistrando(false);},2800);
+    setTimeout(()=>{reset();setExito(null);setRegistrando(false);registrandoRef.current=false;},2800);
   };
 
   useEffect(()=>{
