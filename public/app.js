@@ -284,7 +284,7 @@ function pintarForm() {
       <button data-dir="Nequi" class="${f.dir === 'Nequi' ? 'on' : ''}">Me pasaron Nequi,<br>entregué efectivo</button>
       <button data-dir="Efectivo" class="${f.dir === 'Efectivo' ? 'on' : ''}">Me dieron efectivo,<br>envié Nequi</button></div>`;
   cuerpo += `<span class="lbl">Valor</span><input class="inp money" id="monto" inputmode="numeric" autocomplete="off" placeholder="$0" value="${f.monto ? f.monto.toLocaleString('es-CO') : ''}">
-    <div class="chips" style="margin-top:8px" id="quick">${quick.map(q => `<button class="chip" data-q="${q}">${(q / 1000)}.000</button>`).join('')}</div>`;
+    <div class="chips" style="margin-top:8px" id="quick">${quick.map(q => `<button class="chip" data-q="${q}">+${(q / 1000)}.000</button>`).join('')}<button class="chip" data-q="0">Borrar</button></div>`;
   if (f.tipo !== 'cambio') cuerpo += `<span class="lbl">¿Cómo ${f.tipo === 'venta' ? 'pagaron' : 'salió la plata'}?</span>
     <div class="seg" id="medio"><button data-m="Efectivo" class="${f.medio === 'Efectivo' ? 'on' : ''}">💵 Efectivo</button><button data-m="Nequi" class="${f.medio === 'Nequi' ? 'on' : ''}">📱 Nequi</button></div>`;
   const ph = { venta: 'Nota (opcional)', gasto: 'Detalle: almuerzo, resma de papel… ', retiro: '¿Quién se la llevó o para qué?', cambio: 'Nota (opcional)' }[f.tipo];
@@ -306,7 +306,7 @@ function pintarForm() {
     if (!t) return;
     if (t.dataset.t) { S.f = nuevoForm(t.dataset.t); return pintarForm(); }
     if (t.dataset.cat) { f.cat = t.dataset.cat; box.querySelectorAll('[data-cat]').forEach(x => x.classList.toggle('on', x === t)); montoEl.focus(); return; }
-    if (t.dataset.q) { f.monto = +t.dataset.q; montoEl.value = f.monto.toLocaleString('es-CO'); return; }
+    if (t.dataset.q) { f.monto = t.dataset.q === '0' ? 0 : (f.monto || 0) + +t.dataset.q; montoEl.value = f.monto ? f.monto.toLocaleString('es-CO') : ''; return; }
     if (t.dataset.m) { f.medio = t.dataset.m; box.querySelectorAll('[data-m]').forEach(x => x.classList.toggle('on', x === t)); return; }
     if (t.dataset.dir) { f.dir = t.dataset.dir; box.querySelectorAll('[data-dir]').forEach(x => x.classList.toggle('on', x === t)); }
   };
