@@ -3,11 +3,6 @@
   --pri:#1f5fd6; --pri-bg:#e9f0fd; --ok:#13804b; --ok-bg:#e7f5ee; --bad:#c62f2f; --bad-bg:#fcecec;
   --warn:#9a6700; --warn-bg:#fff5da; --r:12px;
 }
-@media (prefers-color-scheme:dark){:root{
-  --bg:#14171c; --card:#1d2128; --tx:#e8ebef; --sub:#9aa3ae; --line:#2e333c;
-  --pri:#6d9cf0; --pri-bg:#1f2b40; --ok:#4cc38a; --ok-bg:#16301f; --bad:#f07b7b; --bad-bg:#3a1d1d;
-  --warn:#e4b44c; --warn-bg:#3a2f12;
-}}
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
 body{background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -93,3 +88,80 @@ table.t td.n,table.t th.n{text-align:right;white-space:nowrap}
 .keypad button{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:16px;font-size:22px;font-weight:700}
 .center{text-align:center}
 .hide{display:none!important}
+
+/* TEMA 3: Barranca de día — sol, río Magdalena y bordes gruesos */
+:root,:root{--bg:#fff6dc;--card:#ffffff;--tx:#10262b;--sub:#46616a;--line:#10262b;--pri:#0d7c86;--pri-bg:#d6f0f1;--ok:#0d7c86;--ok-bg:#d6f0f1;--bad:#e3263f;--bad-bg:#fde1e5;--warn:#b35b00;--warn-bg:#ffe6c7;--r:16px}
+body{font-family:'Nunito',system-ui,sans-serif;background:#fff6dc}
+h1,h2,h3,header.top b,.act,.stat b,.users button{font-family:'Lilita One',system-ui,sans-serif;font-weight:400}
+header.top{background:#ffc21a;border-bottom:3px solid #10262b}
+header.top .who{color:#10262b} header.top .lnk{color:#10262b;text-decoration:underline}
+.card,.stat{border:3px solid #10262b;box-shadow:0 5px 0 #10262b}
+.act{border:3px solid #10262b;box-shadow:0 4px 0 #10262b;font-size:19px}
+.act.venta{background:#0d7c86;color:#fff} .act.venta small{color:#d6f0f1}
+.act.on{outline:0;background:#ffc21a;color:#10262b}.act.venta.on{background:#0d7c86;color:#fff;outline:4px solid #ffc21a}
+.chip{border:3px solid #10262b;border-radius:999px;font-weight:800}
+.chip.on,.seg button.on{background:#10262b;color:#ffc21a}
+.seg{border:3px solid #10262b}
+.btn{border:3px solid #10262b;box-shadow:0 4px 0 #10262b;background:#ffc21a;color:#10262b;font-weight:900}
+.btn.ok{background:#0d7c86;color:#fff} .btn.bad{background:#e3263f;color:#fff}
+.btn.sec{background:#fff}
+.inp{border:3px solid #10262b}
+.login h1{font-size:38px}
+.login{background:radial-gradient(circle at 50% 0,#ffc21a 0 90px,transparent 91px)}
+.users button,.keypad button{border:3px solid #10262b;box-shadow:0 4px 0 #10262b}
+nav.tabs button.on{background:#10262b;color:#ffc21a}
+/* logo */
+.logo{display:inline-flex;align-items:center;gap:8px;font-family:'Lilita One',system-ui,sans-serif;font-size:19px;color:#10262b;text-decoration:none}
+.logo svg{width:34px;height:34px;flex:none}
+.logo small{display:block;font-family:'Nunito',sans-serif;font-weight:800;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#10262b;opacity:.75;margin-top:-3px}
+.login .logo{flex-direction:column;font-size:36px;gap:6px}
+.login .logo svg{width:92px;height:92px}
+.login .logo small{font-size:13px}
+.login{background:none}
+.login h1{display:flex;justify-content:center}
+
+/* distribución de la pantalla Hoy: celular en una columna, PC en dos */
+.hoy{display:flex;flex-direction:column}
+.hoy .col{display:contents}
+.hoy #cajaBox{order:1}.hoy #regBox{order:2}.hoy #resumen{order:3}.hoy #movsCard{order:4}.hoy #cierreBox{order:5}
+.hoy.adm #resumen{order:2}.hoy.adm #regBox{order:3}
+@media(min-width:900px){
+  body{font-size:15px}
+  .wrap{max-width:1180px}
+  header.top .in,nav.tabs{max-width:1180px}
+  .hoy{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:0 18px;align-items:start}
+  .hoy .col{display:block}
+  .hoy .colL{position:sticky;top:110px}
+  .card{padding:12px 14px}
+  .act{padding:10px 8px;font-size:16px}
+  .act small{font-size:12px}
+  .chip{padding:7px 10px;font-size:14px}
+  .inp{padding:9px 11px;font-size:15px}
+  .money{font-size:22px}
+  .lbl{margin:9px 0 5px;font-size:13px}
+  .btn{padding:10px 14px;font-size:15px}
+  .stat{padding:10px}
+  .stat b{font-size:18px}
+  .list li{padding:8px 0}
+  .card,.stat{box-shadow:0 3px 0 #10262b;border-width:2px}
+  .act,.chip,.btn,.inp,.seg{border-width:2px}
+  .act,.btn{box-shadow:0 3px 0 #10262b}
+  .login{padding-top:24px}
+  .login .logo svg{width:72px;height:72px}
+}
+@media(max-width:899px){
+  header.top .in{gap:6px;padding:8px 12px}
+  .logo{font-size:16px;white-space:nowrap}
+  .logo svg{width:28px;height:28px}
+  header.top .who{font-size:13px}
+  header.top .lnk{white-space:nowrap;font-size:14px}
+  .big-actions{gap:8px}
+  .act{padding:11px 6px;font-size:16px;box-shadow:0 3px 0 #10262b}
+  .act small{font-size:12px}
+  .chips{gap:6px}
+  .chip{padding:7px 11px;font-size:14px;border-width:2px}
+  .money{font-size:24px}
+  .inp{padding:10px}
+  .card{padding:12px}
+  .stat b{font-size:19px}
+}
