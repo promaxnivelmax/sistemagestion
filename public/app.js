@@ -5,6 +5,9 @@ const LOCAL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 const SB = LOCAL ? '/rest/v1' : 'https://sbuyguoxwgpzsqtyhjaf.supabase.co/rest/v1';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNidXlndW94d2dwenNxdHloamFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1OTEzODUsImV4cCI6MjA5NjE2NzM4NX0.YqZtDO1dBktJQ7Nu-AEBRWIoMGzDZISdcD5x-8z4U_U';
 const app = document.getElementById('app');
+const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#ffc21a" stroke="#10262b" stroke-width="4"/><path d="M6 42c6-4 11-4 17 0s11 4 17 0 11-4 18 0v6a30 30 0 0 1-52 0z" fill="#0d7c86" stroke="#10262b" stroke-width="3" stroke-linejoin="round"/><text x="32" y="36" text-anchor="middle" font-family="Lilita One,system-ui,sans-serif" font-size="24" fill="#10262b">52</text></svg>`;
+const marca = sub => `<span class="logo">${LOGO}<span>Internet La 52${sub ? `<small>${sub}</small>` : ''}</span></span>`;
+
 
 /* ---------- utilidades ---------- */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -86,7 +89,7 @@ function salir(silencioso) {
 /* ============ LOGIN ============ */
 async function pantallaLogin() {
   clearInterval(S.poll);
-  app.innerHTML = `<div class="login"><h1>Caja La 52</h1><p>¿Quién eres?</p><div class="users" id="us"><p class="muted">Cargando…</p></div></div>`;
+  app.innerHTML = `<div class="login"><h1>${marca('Caja')}</h1><p>¿Quién eres?</p><div class="users" id="us"><p class="muted">Cargando…</p></div></div>`;
   let us = [];
   try { us = await rpc('cj_usuarios_login'); } catch (e) {
     document.getElementById('us').innerHTML = `<div class="note bad" style="grid-column:1/-1">${esc(e.message)}</div>
@@ -100,7 +103,7 @@ async function pantallaLogin() {
 
 function pedirPin(id, nombre) {
   let pin = '';
-  app.innerHTML = `<div class="login"><h1>Hola, ${esc(nombre)}</h1><p>Escribe tu clave</p>
+  app.innerHTML = `<div class="login"><h1>${marca('Caja')}</h1><p style="font-size:20px;color:var(--tx);font-weight:800">Hola, ${esc(nombre)}</p><p>Escribe tu clave</p>
     <div class="pin-dots" id="dots"></div>
     <div class="note bad hide" id="perr"></div>
     <div class="keypad" id="kp">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-k="${n}">${n}</button>`).join('')}
@@ -142,7 +145,7 @@ const esAdmin = () => S.est && S.est.yo.rol === 'admin';
 async function principal() {
   try { S.est = await rpc('cj_estado', { p_token: S.token }); } catch (e) {
     if (!S.token) return; // la sesión venció: ya se mostró el login
-    app.innerHTML = `<div class="login"><h1>Caja La 52</h1><div class="note bad">${esc(e.message)}</div><button class="btn full" onclick="location.reload()">Reintentar</button></div>`;
+    app.innerHTML = `<div class="login"><h1>${marca('Caja')}</h1><div class="note bad">${esc(e.message)}</div><button class="btn full" onclick="location.reload()">Reintentar</button></div>`;
     return;
   }
   S.yo = S.est.yo;
@@ -154,7 +157,7 @@ async function principal() {
 
 function pintarMarco() {
   const tabs = esAdmin() ? [['hoy', 'Hoy'], ['rep', 'Reportes'], ['hist', 'Historial'], ['aj', 'Ajustes']] : [];
-  app.innerHTML = `<header class="top"><div class="in"><b>Caja La 52</b><span class="who">${esc(S.yo.nombre)}</span>
+  app.innerHTML = `<header class="top"><div class="in">${marca('Caja')}<span class="who">${esc(S.yo.nombre)}</span>
       ${esAdmin() ? '' : '<button class="lnk" id="miClave">Mi clave</button>'}<button class="lnk" id="salir">Salir</button></div>
       ${tabs.length ? `<nav class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</nav>` : ''}
     </header><div class="wrap" id="main"></div>`;
@@ -170,10 +173,11 @@ function pintarMarco() {
 
 /* ---------- HOY / CAJA ---------- */
 function vistaHoy(main) {
-  main.innerHTML = esAdmin() ? `<div id="cajaBox"></div><div id="resumen"></div><div class="card" id="regBox"></div>` : `<div id="cajaBox"></div><div class="card" id="regBox"></div><div id="resumen"></div>`;
-  main.innerHTML += `
-    <div class="card"><h2>${esAdmin() ? 'Movimientos de hoy' : 'Mis registros de hoy'}</h2><ul class="list" id="movs"></ul></div>
-    <div id="cierreBox"></div>`;
+  main.classList.add('hoy'); main.classList.toggle('adm', esAdmin());
+  main.innerHTML = `<div class="col colL"><div class="card" id="regBox"></div></div>
+    <div class="col colR"><div id="cajaBox"></div><div id="resumen"></div>
+    <div class="card" id="movsCard"><h2>${esAdmin() ? 'Movimientos de hoy' : 'Mis registros de hoy'}</h2><ul class="list" id="movs"></ul></div>
+    <div id="cierreBox"></div></div>`;
   pintarForm();
   pintarHoy();
 }
