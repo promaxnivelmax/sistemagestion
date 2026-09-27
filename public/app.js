@@ -20,8 +20,8 @@ const dt = iso => new Date(iso + 'T12:00:00Z');
 const addDays = (iso, n) => { const d = dt(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const fFecha = iso => { const d = dt(iso); return `${DIA[d.getUTCDay()]} ${d.getUTCDate()} ${MES[d.getUTCMonth()]}`; };
 const TIPOS = { venta: 'Venta', gasto: 'Gasto', retiro: 'Retiro', cambio: 'Cambio', ingreso: 'Entrada' };
-const MEDIOS = [['Efectivo', '💵 Efectivo'], ['Nequi', '📱 Nequi'], ['Llave', '🔑 Llave Bre-B']];
-const MED = { Efectivo: 'Efectivo', Nequi: 'Nequi', Llave: 'Llave Bre-B' };
+const MEDIOS = [['Efectivo', '💵 Efectivo'], ['Nequi', '📱 Nequi'], ['Llave', '🔑 Llave (Nu)']];
+const MED = { Efectivo: 'Efectivo', Nequi: 'Nequi', Llave: 'Llave Bre-B (Nu)' };
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
 const PC = () => window.matchMedia && matchMedia('(pointer:fine)').matches;
 const saleDe = m => m.medio_sale || (m.medio === 'Efectivo' ? 'Nequi' : 'Efectivo');
@@ -323,7 +323,7 @@ function pintarForm() {
       <button type="button" class="act ${f.tipo === 'cambio' ? 'on' : ''}" data-t="cambio">⇄ Cambio<small>Nequi, llave ↔ efectivo${PC() ? ' · C' : ''}</small></button>
       <button type="button" class="act ${f.tipo === 'ingreso' ? 'on' : ''}" data-t="ingreso">↓ Entrada<small>llega plata, no es venta${PC() ? ' · I' : ''}</small></button></div>
     ${cuerpo}<button type="button" class="btn full ${f.tipo === 'venta' || f.tipo === 'ingreso' ? 'ok' : f.tipo === 'cambio' ? '' : 'bad'}" id="guardar">${TXT_BTN[f.tipo]}${PC() ? ' <small class="kbd">Enter</small>' : ''}</button>
-    ${PC() ? `<p class="atajos">⌨️ <b>V</b> venta · <b>G</b> gasto · <b>R</b> retiro · <b>C</b> cambio · <b>I</b> entrada · <b>← →</b> elegir ${f.tipo === 'gasto' ? 'gasto' : 'servicio'} · <b>E N L</b> efectivo, Nequi, llave${f.tipo === 'cambio' ? ' (con Shift: lo que entregaste)' : ''} · <b>Enter</b> guardar · <b>Esc</b> borrar</p>` : ''}`;
+    ${PC() ? `<p class="atajos">⌨️ <b>V</b> venta · <b>G</b> gasto · <b>R</b> retiro · <b>C</b> cambio · <b>I</b> entrada · <b>← →</b> elegir ${f.tipo === 'gasto' ? 'gasto' : 'servicio'} · <b>E N L</b> efectivo, Nequi, llave (Nu)${f.tipo === 'cambio' ? ' (con Shift: lo que entregaste)' : ''} · <b>Enter</b> guardar · <b>Esc</b> borrar</p>` : ''}`;
   const montoEl = box.querySelector('#monto');
   moneyInput(montoEl);
   montoEl.addEventListener('input', () => { f.monto = num(montoEl.value); });
