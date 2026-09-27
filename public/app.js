@@ -19,7 +19,12 @@ const DIA = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const dt = iso => new Date(iso + 'T12:00:00Z');
 const addDays = (iso, n) => { const d = dt(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const fFecha = iso => { const d = dt(iso); return `${DIA[d.getUTCDay()]} ${d.getUTCDate()} ${MES[d.getUTCMonth()]}`; };
-const TIPOS = { venta: 'Venta', gasto: 'Gasto', retiro: 'Retiro', cambio: 'Cambio' };
+const TIPOS = { venta: 'Venta', gasto: 'Gasto', retiro: 'Retiro', cambio: 'Cambio', ingreso: 'Entrada' };
+const MEDIOS = [['Efectivo', '💵 Efectivo'], ['Nequi', '📱 Nequi'], ['Llave', '🔑 Llave Bre-B']];
+const MED = { Efectivo: 'Efectivo', Nequi: 'Nequi', Llave: 'Llave Bre-B' };
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+const PC = () => window.matchMedia && matchMedia('(pointer:fine)').matches;
+const saleDe = m => m.medio_sale || (m.medio === 'Efectivo' ? 'Nequi' : 'Efectivo');
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
@@ -77,7 +82,7 @@ function moneyInput(el) {
 
 /* ---------- estado ---------- */
 const S = { token: null, yo: null, est: null, tab: 'hoy', f: null, rep: { per: 'hoy' }, hist: {} };
-const nuevoForm = (tipo = 'venta') => ({ tipo, cat: '', monto: 0, medio: 'Efectivo', nota: '', dir: 'Nequi' });
+const nuevoForm = (tipo = 'venta') => ({ tipo, cat: '', monto: 0, medio: 'Efectivo', nota: '', rec: 'Nequi', ent: 'Efectivo', uid: uid() });
 
 function salir(silencioso) {
   if (S.token && !silencioso) rpc('cj_salir', { p_token: S.token }).catch(() => {});
@@ -224,9 +229,11 @@ function pintarHoy() {
         ${stat('Gastos', fmt(d.gastos), '', d.gastos ? 'neg' : '')}
         ${stat('Retiros', fmt(d.retiros))}
         ${stat('Ganancia del día', fmt(d.ventas - d.gastos), '', d.ventas - d.gastos >= 0 ? 'pos' : 'neg')}</div>
-      <div class="stats" style="margin-top:10px">
+      <div class="stats s3" style="margin-top:10px">
         ${stat('💵 Debe haber en el cajón', fmt(E.esperado_ef), 'base + efectivo que entró − lo que salió')}
-        ${stat('📱 Nequi del día', fmt(E.nequi_dia), 'ventas por Nequi ± cambios')}</div>
+        ${stat('📱 Nequi del día', fmt(E.nequi_dia), 'lo que entró por Nequi ± cambios')}
+        ${stat('🔑 Llave del día', fmt(E.llave_dia), 'lo que entró por la llave ± cambios')}</div>
+      ${E.dia.ingresos ? `<p class="muted" style="margin-top:6px">Entradas que no son venta hoy: <b>${fmt(E.dia.ingresos)}</b></p>` : ''}
       ${tablaBonos(E.bonos, 'Bonos de esta semana')}`;
   } else {
     const b = E.mi_bono;
@@ -234,6 +241,12 @@ function pintarHoy() {
       ${stat('Hoy llevas', fmt(E.mio.ventas), E.mio.n + (E.mio.n === 1 ? ' venta' : ' ventas'))}
       ${b ? stat('Tu puesto esta semana', b.puesto + '°', b.puesto <= 2 && b.ventas > 0 ? 'Bono estimado ' + fmt(b.bono) + ' 🎉' : 'Los 2 primeros ganan 3,5% de bono') : ''}</div>`;
   }
+
+  // salidas del día (gastos y retiros): siempre visibles
+  const sal = E.salidas || [];
+  if (c && !c.cerrada) res.insertAdjacentHTML('beforeend', `<div class="note ${sal.length ? 'info' : 'warn'} salidas" style="margin-top:10px">💸 <b>Salidas de hoy:</b> ${sal.length ? `${sal.length} (${fmt(sal.reduce((a, x) => a + x.monto, 0))})` : 'ninguna registrada'}.
+    ¿Salió plata del cajón (almuerzo, compras, pagos, plata que se llevó alguien)? <button class="lnk" data-go="gasto">Registrar gasto</button> · <button class="lnk" data-go="retiro">Registrar retiro</button></div>`);
+  res.querySelectorAll('[data-go]').forEach(b => b.onclick = () => irA(b.dataset.go));
 
   // movimientos
   const ul = document.getElementById('movs');
@@ -257,23 +270,34 @@ function resultadoCierre(c) {
     <tr><td>Debía haber en efectivo</td><td class="n">${fmt(c.esperado)}</td></tr>
     <tr><td>Se contó</td><td class="n">${fmt(c.contado)}</td></tr>
     <tr><td>Nequi del día</td><td class="n">${fmt(c.nequi_dia ?? c.nequi)}</td></tr>
+    <tr><td>Llave Bre-B del día</td><td class="n">${fmt(c.llave_dia ?? c.llave ?? 0)}</td></tr>
     ${c.cerrada_por ? `<tr><td>Cerró</td><td class="n">${esc(c.cerrada_por)}</td></tr>` : ''}</table>`;
 }
 
 function filaMov(m, hoy) {
   const puedeAnular = !m.anulado && (esAdmin() || (hoy && m.usuario_id === S.yo.id && Date.now() - new Date(m.creado).getTime() < 15 * 60000));
-  const signo = m.tipo === 'venta' ? '' : m.tipo === 'cambio' ? '⇄ ' : '−';
-  const detalle = m.tipo === 'cambio' ? (m.medio === 'Nequi' ? 'Recibió Nequi, entregó efectivo' : 'Recibió efectivo, envió Nequi') : (m.categoria || TIPOS[m.tipo]);
+  const signo = m.tipo === 'venta' ? '' : m.tipo === 'ingreso' ? '+' : m.tipo === 'cambio' ? '⇄ ' : '−';
+  const detalle = m.tipo === 'cambio' ? `Recibió ${MED[m.medio]}, entregó ${MED[saleDe(m)]}` : (m.categoria || TIPOS[m.tipo]);
   return `<li class="${m.anulado ? 'anul' : ''}"><div class="d"><div><span class="tag ${m.tipo}">${TIPOS[m.tipo]}</span> ${esc(detalle)}</div>
-    <div>${m.fecha && !hoy ? fFecha(m.fecha) + ' · ' : ''}${esc(m.hora)} · ${esc(m.medio)}${esAdmin() ? ' · ' + esc(m.usuario) : ''}${m.nota ? ' · ' + esc(m.nota) : ''}
+    <div>${m.fecha && !hoy ? fFecha(m.fecha) + ' · ' : ''}${esc(m.hora)} · ${esc(MED[m.medio] || m.medio)}${esAdmin() ? ' · ' + esc(m.usuario) : ''}${m.nota ? ' · ' + esc(m.nota) : ''}
     ${m.anulado ? `<br>Anulado por ${esc(m.anulado_por || '')}${m.anulado_motivo ? ': ' + esc(m.anulado_motivo) : ''}` : ''}
     ${m.editado_por ? `<br>Corregido por ${esc(m.editado_por)}: ${esc(m.editado_motivo || '')}${m.original ? ' (antes ' + fmt(m.original.monto) + ')' : ''}` : ''}</div></div>
-    <div class="m ${m.tipo === 'venta' ? 'pos' : m.tipo === 'cambio' ? '' : 'neg'}">${signo}${fmt(m.monto)}</div>
+    <div class="m ${m.tipo === 'venta' || m.tipo === 'ingreso' ? 'pos' : m.tipo === 'cambio' ? '' : 'neg'}">${signo}${fmt(m.monto)}</div>
     ${esAdmin() && !m.anulado ? `<button class="lnk" data-editar="${m.id}" title="Corregir">✏️</button>` : ''}
     ${puedeAnular ? `<button class="lnk" data-anular="${m.id}" title="Anular">✕</button>` : ''}</li>`;
 }
 
 /* ---------- formulario de registro ---------- */
+const TXT_BTN = { venta: 'Guardar venta', gasto: 'Guardar gasto', retiro: 'Guardar retiro', cambio: 'Guardar cambio', ingreso: 'Guardar entrada' };
+const TECLA_TIPO = { v: 'venta', g: 'gasto', r: 'retiro', c: 'cambio', i: 'ingreso' };
+const TECLA_MEDIO = { e: 'Efectivo', n: 'Nequi', l: 'Llave' };
+
+function irA(tipo) { S.tab = 'hoy'; S.f = nuevoForm(tipo); if (!document.getElementById('regBox')) pintarMarco(); else pintarForm(); const m = document.getElementById('monto'); if (m) { m.scrollIntoView({ block: 'center' }); m.focus(); } }
+
+function segMedios(id, sel, quitar) {
+  return `<div class="seg s3" id="${id}">${MEDIOS.map(([k, l]) => `<button type="button" data-${id}="${k}" class="${sel === k ? 'on' : ''}"${quitar === k ? ' disabled' : ''}>${l}</button>`).join('')}</div>`;
+}
+
 function pintarForm() {
   const box = document.getElementById('regBox'), f = S.f, cats = S.est.cats;
   const quick = [1000, 2000, 3000, 5000, 10000, 20000, 50000];
@@ -281,63 +305,105 @@ function pintarForm() {
   if (f.tipo === 'venta' || f.tipo === 'gasto') {
     const lista = f.tipo === 'venta' ? cats.venta : cats.gasto;
     cuerpo += `<span class="lbl">${f.tipo === 'venta' ? '¿Qué vendiste?' : '¿En qué se gastó?'}</span>
-      <div class="chips" id="cats">${lista.map(n => `<button class="chip ${f.cat === n ? 'on' : ''}" data-cat="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
+      <div class="chips" id="cats">${lista.map(n => `<button type="button" class="chip ${f.cat === n ? 'on' : ''}" data-cat="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
   }
   if (f.tipo === 'retiro') cuerpo += `<p class="muted" style="margin-top:10px">Plata que <b>sale de la caja</b> sin ser un gasto: la que se lleva Iván, una consignación, etc.</p>`;
-  if (f.tipo === 'cambio') cuerpo += `<span class="lbl">¿Qué pasó?</span><div class="seg" id="dir">
-      <button data-dir="Nequi" class="${f.dir === 'Nequi' ? 'on' : ''}">Me pasaron Nequi,<br>entregué efectivo</button>
-      <button data-dir="Efectivo" class="${f.dir === 'Efectivo' ? 'on' : ''}">Me dieron efectivo,<br>envié Nequi</button></div>`;
+  if (f.tipo === 'ingreso') cuerpo += `<p class="muted" style="margin-top:10px">Plata que <b>llega y no es una venta</b>: te mandaron a la llave o a Nequi, te devolvieron un préstamo, etc. No cuenta como venta ni para los bonos.</p>`;
+  if (f.tipo === 'cambio') cuerpo += `<span class="lbl">¿Qué recibiste?</span>${segMedios('rec', f.rec)}
+      <span class="lbl">¿Qué entregaste?</span>${segMedios('ent', f.ent, f.rec)}`;
   cuerpo += `<span class="lbl">Valor</span><input class="inp money" id="monto" inputmode="numeric" autocomplete="off" placeholder="$0" value="${f.monto ? f.monto.toLocaleString('es-CO') : ''}">
-    <div class="chips" style="margin-top:8px" id="quick">${quick.map(q => `<button class="chip" data-q="${q}">+${(q / 1000)}.000</button>`).join('')}<button class="chip" data-q="0">Borrar</button></div>`;
-  if (f.tipo !== 'cambio') cuerpo += `<span class="lbl">¿Cómo ${f.tipo === 'venta' ? 'pagaron' : 'salió la plata'}?</span>
-    <div class="seg" id="medio"><button data-m="Efectivo" class="${f.medio === 'Efectivo' ? 'on' : ''}">💵 Efectivo</button><button data-m="Nequi" class="${f.medio === 'Nequi' ? 'on' : ''}">📱 Nequi</button></div>`;
-  const ph = { venta: 'Nota (opcional)', gasto: 'Detalle: almuerzo, resma de papel… ', retiro: '¿Quién se la llevó o para qué?', cambio: 'Nota (opcional)' }[f.tipo];
+    <div class="chips" style="margin-top:8px" id="quick">${quick.map(q => `<button type="button" class="chip" data-q="${q}">+${(q / 1000)}.000</button>`).join('')}<button type="button" class="chip" data-q="0">Borrar</button></div>`;
+  if (f.tipo !== 'cambio') cuerpo += `<span class="lbl">${{ venta: '¿Cómo pagaron?', ingreso: '¿Por dónde llegó?' }[f.tipo] || '¿Cómo salió la plata?'}</span>${segMedios('m', f.medio)}`;
+  const ph = { venta: 'Nota (opcional)', gasto: 'Detalle: almuerzo, resma de papel… ', retiro: '¿Quién se la llevó o para qué?', cambio: 'Nota (opcional)', ingreso: '¿De quién o de qué es esa plata?' }[f.tipo];
   cuerpo += `<span class="lbl">Nota</span><input class="inp" id="nota" maxlength="200" placeholder="${ph}" value="${esc(f.nota)}">`;
-  const txtBtn = { venta: 'Guardar venta', gasto: 'Guardar gasto', retiro: 'Guardar retiro', cambio: 'Guardar cambio' }[f.tipo];
   box.innerHTML = `<div class="big-actions">
-      <button class="act venta ${f.tipo === 'venta' ? 'on' : ''}" data-t="venta">＋ Venta<small>entra plata</small></button>
-      <button class="act ${f.tipo === 'gasto' ? 'on' : ''}" data-t="gasto">− Gasto<small>almuerzo, papelería…</small></button>
-      <button class="act ${f.tipo === 'retiro' ? 'on' : ''}" data-t="retiro">↑ Retiro<small>sacar plata de la caja</small></button>
-      <button class="act ${f.tipo === 'cambio' ? 'on' : ''}" data-t="cambio">⇄ Cambio<small>Nequi ↔ efectivo</small></button></div>
-    ${cuerpo}<button class="btn full ${f.tipo === 'venta' ? 'ok' : f.tipo === 'cambio' ? '' : 'bad'}" id="guardar">${txtBtn}</button>`;
+      <button type="button" class="act venta ${f.tipo === 'venta' ? 'on' : ''}" data-t="venta">＋ Venta<small>entra plata${PC() ? ' · tecla V' : ''}</small></button>
+      <button type="button" class="act ${f.tipo === 'gasto' ? 'on' : ''}" data-t="gasto">− Gasto<small>almuerzo, papelería…${PC() ? ' · G' : ''}</small></button>
+      <button type="button" class="act ${f.tipo === 'retiro' ? 'on' : ''}" data-t="retiro">↑ Retiro<small>sacar plata de la caja${PC() ? ' · R' : ''}</small></button>
+      <button type="button" class="act ${f.tipo === 'cambio' ? 'on' : ''}" data-t="cambio">⇄ Cambio<small>Nequi, llave ↔ efectivo${PC() ? ' · C' : ''}</small></button>
+      <button type="button" class="act ${f.tipo === 'ingreso' ? 'on' : ''}" data-t="ingreso">↓ Entrada<small>llega plata, no es venta${PC() ? ' · I' : ''}</small></button></div>
+    ${cuerpo}<button type="button" class="btn full ${f.tipo === 'venta' || f.tipo === 'ingreso' ? 'ok' : f.tipo === 'cambio' ? '' : 'bad'}" id="guardar">${TXT_BTN[f.tipo]}${PC() ? ' <small class="kbd">Enter</small>' : ''}</button>
+    ${PC() ? `<p class="atajos">⌨️ <b>V</b> venta · <b>G</b> gasto · <b>R</b> retiro · <b>C</b> cambio · <b>I</b> entrada · <b>← →</b> elegir ${f.tipo === 'gasto' ? 'gasto' : 'servicio'} · <b>E N L</b> efectivo, Nequi, llave${f.tipo === 'cambio' ? ' (con Shift: lo que entregaste)' : ''} · <b>Enter</b> guardar · <b>Esc</b> borrar</p>` : ''}`;
   const montoEl = box.querySelector('#monto');
   moneyInput(montoEl);
   montoEl.addEventListener('input', () => { f.monto = num(montoEl.value); });
-  montoEl.addEventListener('keydown', e => { if (e.key === 'Enter') guardar(); });
   box.querySelector('#nota').addEventListener('input', e => { f.nota = e.target.value; });
   box.onclick = e => {
-    const t = e.target.closest('[data-t],[data-cat],[data-q],[data-m],[data-dir]');
+    const t = e.target.closest('[data-t],[data-cat],[data-q],[data-m],[data-rec],[data-ent]');
     if (!t) return;
-    if (t.dataset.t) { S.f = nuevoForm(t.dataset.t); return pintarForm(); }
-    if (t.dataset.cat) { f.cat = t.dataset.cat; box.querySelectorAll('[data-cat]').forEach(x => x.classList.toggle('on', x === t)); montoEl.focus(); return; }
-    if (t.dataset.q) { f.monto = t.dataset.q === '0' ? 0 : (f.monto || 0) + +t.dataset.q; montoEl.value = f.monto ? f.monto.toLocaleString('es-CO') : ''; return; }
-    if (t.dataset.m) { f.medio = t.dataset.m; box.querySelectorAll('[data-m]').forEach(x => x.classList.toggle('on', x === t)); return; }
-    if (t.dataset.dir) { f.dir = t.dataset.dir; box.querySelectorAll('[data-dir]').forEach(x => x.classList.toggle('on', x === t)); }
+    if (t.dataset.t) return cambiarTipo(t.dataset.t);
+    if (t.dataset.cat) return elegirCat(t.dataset.cat);
+    if (t.dataset.q) { f.monto = t.dataset.q === '0' ? 0 : (f.monto || 0) + +t.dataset.q; montoEl.value = f.monto ? f.monto.toLocaleString('es-CO') : ''; if (PC()) montoEl.focus(); return; }
+    if (t.dataset.m) return elegirMedio(t.dataset.m);
+    if (t.dataset.rec) return elegirMedio(t.dataset.rec);
+    if (t.dataset.ent) return elegirMedio(t.dataset.ent, true);
   };
   box.querySelector('#guardar').onclick = guardar;
+  if (PC() && !document.querySelector('.modal')) setTimeout(() => { if (document.activeElement === document.body || !document.activeElement || document.activeElement.closest('#regBox')) montoEl.focus(); }, 0);
 }
+
+function cambiarTipo(t) { const f = S.f; S.f = nuevoForm(t); S.f.monto = f.monto; pintarForm(); }
+function elegirCat(n) { S.f.cat = n; document.querySelectorAll('#regBox [data-cat]').forEach(x => x.classList.toggle('on', x.dataset.cat === n)); if (PC()) document.getElementById('monto').focus(); }
+function elegirMedio(k, entrega) {
+  const f = S.f;
+  if (f.tipo === 'cambio') {
+    if (entrega) { if (k !== f.rec) f.ent = k; }
+    else { f.rec = k; if (f.ent === k) f.ent = k === 'Efectivo' ? 'Nequi' : 'Efectivo'; }
+    const m = f.monto; pintarForm(); S.f.monto = m; return;
+  }
+  f.medio = k; document.querySelectorAll('#regBox [data-m]').forEach(x => x.classList.toggle('on', x.dataset.m === k));
+}
+
+/* ---------- teclado ---------- */
+document.addEventListener('keydown', e => {
+  if (!S.est || S.tab !== 'hoy' || document.querySelector('.modal') || !document.getElementById('regBox') || document.getElementById('regBox').classList.contains('hide')) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = document.activeElement, enNota = el && el.id === 'nota', enMonto = el && el.id === 'monto';
+  const otroCampo = el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !enNota && !enMonto;
+  if (otroCampo) return;
+  const k = e.key.toLowerCase();
+  if (e.key === 'Enter') { e.preventDefault(); return guardar(); }
+  if (enNota) { if (e.key === 'Escape') { e.preventDefault(); document.getElementById('monto').focus(); } return; }
+  if (e.key === 'Escape') { e.preventDefault(); S.f.monto = 0; const m = document.getElementById('monto'); m.value = ''; m.focus(); return; }
+  if (TECLA_TIPO[k]) { e.preventDefault(); return cambiarTipo(TECLA_TIPO[k]); }
+  if (TECLA_MEDIO[k]) { e.preventDefault(); return elegirMedio(TECLA_MEDIO[k], e.shiftKey); }
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const lista = S.f.tipo === 'venta' ? S.est.cats.venta : S.f.tipo === 'gasto' ? S.est.cats.gasto : null;
+    if (!lista || !lista.length) return;
+    e.preventDefault();
+    const i = lista.indexOf(S.f.cat), d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+    elegirCat(lista[i < 0 ? (d > 0 ? 0 : lista.length - 1) : (i + d + lista.length) % lista.length]);
+    return;
+  }
+  if (!enMonto && /^\d$/.test(e.key)) { const m = document.getElementById('monto'); m.focus(); }
+});
 
 let guardando = false;
 async function guardar() {
   if (guardando) return;
   const f = S.f;
-  if ((f.tipo === 'venta' || f.tipo === 'gasto') && !f.cat) return toast(f.tipo === 'venta' ? 'Toca qué vendiste' : 'Toca en qué se gastó', true);
-  if (!f.monto) return toast('Escribe el valor', true);
-  if (f.tipo === 'retiro' && !f.nota.trim()) return toast('Escribe quién se llevó la plata o para qué', true);
+  if ((f.tipo === 'venta' || f.tipo === 'gasto') && !f.cat) return toast(f.tipo === 'venta' ? 'Elige qué vendiste' + (PC() ? ' (flechas ← →)' : '') : 'Elige en qué se gastó', true);
+  if (!f.monto) { const m = document.getElementById('monto'); if (m) m.focus(); return toast('Escribe el valor', true); }
+  if (f.tipo === 'retiro' && !f.nota.trim()) { document.getElementById('nota').focus(); return toast('Escribe quién se llevó la plata o para qué', true); }
+  if (f.tipo === 'ingreso' && !f.nota.trim()) { document.getElementById('nota').focus(); return toast('Escribe de quién o de qué es esa plata', true); }
   if (f.monto >= 1000000 && !confirmar(`¿Seguro? El valor es ${fmt(f.monto)}`)) return;
   guardando = true;
-  const btn = document.getElementById('guardar'); if (btn) btn.disabled = true;
+  const btn = document.getElementById('guardar'); if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
   try {
-    const medio = f.tipo === 'cambio' ? f.dir : f.medio;
-    const cat = f.tipo === 'cambio' ? 'Cambio Nequi/efectivo' : f.tipo === 'retiro' ? 'Retiro' : f.cat;
-    const r = await rpc('cj_registrar', { p_token: S.token, p_tipo: f.tipo, p_medio: medio, p_categoria: cat, p_monto: f.monto, p_nota: f.nota.trim() });
-    toast(`✓ ${TIPOS[r.tipo]} de ${fmt(r.monto)} guardado`);
-    const tipo = f.tipo; S.f = nuevoForm(tipo); if (tipo !== 'venta') S.f = nuevoForm('venta');
+    const medio = f.tipo === 'cambio' ? f.rec : f.medio;
+    const cat = f.tipo === 'cambio' ? 'Cambio' : f.tipo === 'retiro' ? 'Retiro' : f.tipo === 'ingreso' ? 'Entrada' : f.cat;
+    const r = await rpc('cj_registrar_v2', { p_token: S.token, p_tipo: f.tipo, p_medio: medio, p_categoria: cat, p_monto: f.monto,
+      p_nota: f.nota.trim(), p_sale: f.tipo === 'cambio' ? f.ent : null, p_cliente: f.uid });
+    toast(r.repetido ? `Ya estaba guardado: ${TIPOS[r.tipo]} de ${fmt(r.monto)}` : `✓ ${TIPOS[r.tipo]} de ${fmt(r.monto)} guardado`);
+    S.f = nuevoForm(f.tipo === 'venta' ? 'venta' : 'venta');
+    guardando = false;
     pintarForm();
     await refrescarHoy(true);
-  } catch (e) { toast(e.message, true); }
-  guardando = false;
-  const b2 = document.getElementById('guardar'); if (b2) b2.disabled = false;
+  } catch (e) {
+    guardando = false;
+    toast(e.message, true);
+    const b2 = document.getElementById('guardar'); if (b2) { b2.disabled = false; b2.innerHTML = TXT_BTN[f.tipo] + (PC() ? ' <small class="kbd">Enter</small>' : ''); }
+  }
 }
 
 function confirmar(msg) { return window.confirm(msg); }
@@ -358,7 +424,7 @@ function editar(m) {
   const opts = [...new Set([m.categoria, ...lista])].map(n => `<option ${n === m.categoria ? 'selected' : ''}>${esc(n)}</option>`).join('');
   modal(`<h3>Corregir ${TIPOS[m.tipo].toLowerCase()}</h3><p class="muted">${m.fecha ? fFecha(m.fecha) + ' · ' : ''}${esc(m.hora)} · ${esc(m.usuario)}</p>
     <span class="lbl">Valor</span><input class="inp money" id="em" inputmode="numeric" value="${Number(m.monto).toLocaleString('es-CO')}">
-    <span class="lbl">Medio</span><select class="inp" id="emed"><option ${m.medio === 'Efectivo' ? 'selected' : ''}>Efectivo</option><option ${m.medio === 'Nequi' ? 'selected' : ''}>Nequi</option></select>
+    <span class="lbl">${m.tipo === 'cambio' ? 'Lo que recibió' : 'Medio'}</span><select class="inp" id="emed">${MEDIOS.map(([k, l]) => `<option value="${k}" ${m.medio === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     ${m.tipo === 'venta' || m.tipo === 'gasto' ? `<span class="lbl">Categoría</span><select class="inp" id="ecat">${opts}</select>` : ''}
     <span class="lbl">Nota</span><input class="inp" id="enota" maxlength="200" value="${esc(m.nota)}">
     <span class="lbl">Motivo de la corrección *</span><input class="inp" id="emot" maxlength="200" placeholder="Ej: era 5.000 no 50.000">
@@ -375,20 +441,40 @@ function editar(m) {
 }
 
 function cerrarCaja() {
-  modal(`<h3>🔒 Cerrar la caja</h3><p class="muted">Cuenta <b>todo el efectivo</b> que hay en el cajón (incluida la base) y escríbelo.</p>
-    <input class="inp money" id="cont" inputmode="numeric" placeholder="$0" style="margin-top:12px">
-    <span class="lbl">Nota (opcional)</span><input class="inp" id="cnota" maxlength="300" placeholder="Algo que Iván deba saber">
-    <button class="btn full" id="ok">Cerrar caja</button><button class="btn sec full" data-close>Cancelar</button>`, (b, close) => {
-    moneyInput(b.querySelector('#cont'));
-    b.querySelector('#ok').onclick = async ev => {
-      const v = b.querySelector('#cont').value;
-      if (v.trim() === '') return toast('Escribe cuánto efectivo contaste (si no hay nada, escribe 0)', true);
-      ev.target.disabled = true;
-      try {
-        const r = await rpc('cj_cerrar_caja', { p_token: S.token, p_contado: num(v), p_nota: b.querySelector('#cnota').value });
-        b.innerHTML = `<h3>Caja cerrada</h3>${resultadoCierre({ ...r, cerrada_por: S.yo.nombre })}<button class="btn full" data-close>Listo</button>`;
-        refrescarHoy(true);
-      } catch (e) { toast(e.message, true); ev.target.disabled = false; }
+  const sal = (S.est && S.est.salidas) || [];
+  const tot = sal.reduce((a, x) => a + x.monto, 0);
+  modal(`<h3>🔒 Cerrar la caja · paso 1 de 2</h3>
+    <p class="muted">Antes de contar, revisa que <b>todo lo que salió del cajón hoy</b> esté registrado: almuerzos, compras, pagos, plata que se llevó alguien.</p>
+    <div class="card" style="margin:10px 0;padding:10px 12px">${sal.length ? `<table class="t">${sal.map(x => `<tr><td><span class="tag ${x.tipo}">${TIPOS[x.tipo]}</span> ${esc(x.categoria)}${x.nota ? ' · ' + esc(x.nota) : ''}<br><span class="muted">${esc(x.hora)} · ${esc(x.usuario)} · ${esc(MED[x.medio] || x.medio)}</span></td><td class="n neg">−${fmt(x.monto)}</td></tr>`).join('')}
+      <tr><td><b>Total salidas</b></td><td class="n"><b>${fmt(tot)}</b></td></tr></table>` : '<p class="muted" style="margin:0">No hay gastos ni retiros registrados hoy.</p>'}</div>
+    <div class="row" style="gap:8px"><button class="btn sec grow" id="addG">＋ Falta un gasto</button><button class="btn sec grow" id="addR">＋ Falta un retiro</button></div>
+    <label class="row confirma" style="margin-top:12px;align-items:flex-start"><input type="checkbox" id="okSal" style="width:22px;height:22px;flex-shrink:0">
+      <span>${sal.length ? 'Confirmo que <b>todos</b> los gastos y retiros de hoy están registrados.' : 'Confirmo que hoy <b>no salió plata</b> del cajón (ni gastos ni retiros).'}</span></label>
+    <button class="btn full" id="sig" disabled>Siguiente: contar el efectivo →</button><button class="btn sec full" data-close>Cancelar</button>`, (b, close) => {
+    const ok = b.querySelector('#okSal'), sig = b.querySelector('#sig');
+    ok.onchange = () => { sig.disabled = !ok.checked; };
+    b.querySelector('#addG').onclick = () => { close(); irA('gasto'); toast('Registra el gasto y vuelve a tocar "Cerrar la caja"'); };
+    b.querySelector('#addR').onclick = () => { close(); irA('retiro'); toast('Registra el retiro y vuelve a tocar "Cerrar la caja"'); };
+    sig.onclick = () => {
+      if (!ok.checked) return;
+      b.innerHTML = `<h3>🔒 Cerrar la caja · paso 2 de 2</h3><p class="muted">Cuenta <b>todo el efectivo</b> que hay en el cajón (incluida la base) y escríbelo.</p>
+        <input class="inp money" id="cont" inputmode="numeric" placeholder="$0" style="margin-top:12px">
+        <span class="lbl">Nota (opcional)</span><input class="inp" id="cnota" maxlength="300" placeholder="Algo que Iván deba saber">
+        <button class="btn full" id="ok">Cerrar caja</button><button class="btn sec full" data-close>Cancelar</button>`;
+      const cont = b.querySelector('#cont'); moneyInput(cont); setTimeout(() => cont.focus(), 30);
+      const enviar = async ev => {
+        const v = cont.value, btn = b.querySelector('#ok');
+        if (v.trim() === '') return toast('Escribe cuánto efectivo contaste (si no hay nada, escribe 0)', true);
+        if (btn.disabled) return;
+        btn.disabled = true;
+        try {
+          const r = await rpc('cj_cerrar_caja_v2', { p_token: S.token, p_contado: num(v), p_nota: b.querySelector('#cnota').value, p_salidas_ok: true });
+          b.innerHTML = `<h3>Caja cerrada</h3>${resultadoCierre({ ...r, cerrada_por: S.yo.nombre })}<button class="btn full" data-close>Listo</button>`;
+          refrescarHoy(true);
+        } catch (e) { toast(e.message, true); btn.disabled = false; }
+      };
+      b.querySelector('#ok').onclick = enviar;
+      cont.addEventListener('keydown', e => { if (e.key === 'Enter') enviar(); });
     };
   });
 }
@@ -449,7 +535,8 @@ async function cargarReporte(d1, d2) {
       ${stat('Gastos', fmt(T.gastos), '', T.gastos ? 'neg' : '')}
       ${stat('Ganancia', fmt(gan), 'ventas − gastos', gan >= 0 ? 'pos' : 'neg')}
       ${stat('Retiros', fmt(T.retiros), 'plata que salió para ti')}</div>
-    <div class="stats" style="margin-top:10px">${stat('💵 Vendido en efectivo', fmt(T.ventas_ef))}${stat('📱 Vendido por Nequi', fmt(T.ventas_nq))}</div>
+    <div class="stats s3" style="margin-top:10px">${stat('💵 Vendido en efectivo', fmt(T.ventas_ef))}${stat('📱 Vendido por Nequi', fmt(T.ventas_nq))}${stat('🔑 Vendido por Llave', fmt(T.ventas_ll || 0))}</div>
+    ${T.ingresos ? `<p class="muted" style="margin-top:6px">Entradas que no son venta: <b>${fmt(T.ingresos)}</b></p>` : ''}
     <div class="card"><h2>Por empleado</h2>${R.por_empleado.length ? R.por_empleado.map(x => `<div style="margin-bottom:10px"><div class="row"><b class="grow">${esc(x.nombre)}</b><span>${fmt(x.ventas)} <span class="muted">· ${x.n}</span></span></div><div class="bar"><i style="width:${x.ventas / maxE * 100}%"></i></div></div>`).join('') : '<p class="muted">Sin ventas.</p>'}</div>
     <div class="card"><h2>Lo que más se vende</h2>${R.por_cat_venta.length ? R.por_cat_venta.map(x => `<div style="margin-bottom:10px"><div class="row"><span class="grow">${esc(x.categoria)}</span><span>${fmt(x.total)} <span class="muted">· ${x.n}</span></span></div><div class="bar"><i style="width:${x.total / maxC * 100}%"></i></div></div>`).join('') : '<p class="muted">Sin ventas.</p>'}</div>
     <div class="card"><h2>Gastos</h2>${R.por_cat_gasto.length ? `<table class="t">${R.por_cat_gasto.map(x => `<tr><td>${esc(x.categoria)}</td><td class="n">${fmt(x.total)}</td></tr>`).join('')}</table>` : '<p class="muted">No se registraron gastos. Recuerda anotar todo lo que sale de la caja.</p>'}</div>
@@ -485,10 +572,10 @@ function filtrarHist() {
   const H = S.hist, l = document.getElementById('hl'); if (!l || !H.data) return;
   const q = H.q.trim().toLowerCase();
   const rows = H.data.filter(m => (H.tipo === 'anulado' ? m.anulado : (!H.tipo || m.tipo === H.tipo))
-    && (!q || [m.usuario, m.categoria, m.nota, m.medio, String(m.monto)].join(' ').toLowerCase().includes(q)));
+    && (!q || [m.usuario, m.categoria, m.nota, MED[m.medio] || m.medio, String(m.monto)].join(' ').toLowerCase().includes(q)));
   const vivos = rows.filter(m => !m.anulado);
   const sum = t => vivos.filter(m => m.tipo === t).reduce((a, m) => a + m.monto, 0);
-  document.getElementById('htot').innerHTML = `${rows.length} registros · Ventas <b>${fmt(sum('venta'))}</b> · Gastos <b>${fmt(sum('gasto'))}</b> · Retiros <b>${fmt(sum('retiro'))}</b>`;
+  document.getElementById('htot').innerHTML = `${rows.length} registros · Ventas <b>${fmt(sum('venta'))}</b> · Gastos <b>${fmt(sum('gasto'))}</b> · Retiros <b>${fmt(sum('retiro'))}</b>${sum('ingreso') ? ` · Entradas <b>${fmt(sum('ingreso'))}</b>` : ''}`;
   l.innerHTML = rows.length ? rows.slice(0, 500).map(m => filaMov(m, false)).join('') + (rows.length > 500 ? '<li class="muted">Mostrando 500. Usa el buscador o acorta las fechas.</li>' : '') : '<li class="muted">No hay registros.</li>';
 }
 
