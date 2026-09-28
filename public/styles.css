@@ -177,3 +177,11 @@ nav.tabs button.on{background:#10262b;color:#ffc21a}
 .kbd{font-size:11px;opacity:.75;border:1.5px solid currentColor;border-radius:5px;padding:0 5px;margin-left:6px;vertical-align:middle}
 .salidas .lnk{padding:0;font-weight:800}
 .confirma span{font-size:15px;line-height:1.35}
+
+/* tiempo real */
+.avisos{position:fixed;left:12px;bottom:12px;z-index:60;display:flex;flex-direction:column;gap:8px;max-width:min(360px,92vw)}
+.aviso{background:#1c2430;color:#fff;padding:10px 14px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.25);cursor:pointer;animation:avIn .25s ease-out}
+.aviso small{opacity:.7;font-weight:400;margin-left:4px}
+@keyframes avIn{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+.enl{text-decoration:none!important}
+.tag.on{background:var(--ok-bg);color:var(--ok);font-size:14px;margin:2px}
