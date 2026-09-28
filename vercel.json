@@ -33,5 +33,18 @@
         }
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "sistemagestion-seven.vercel.app"
+        }
+      ],
+      "destination": "https://caja.ivanrodriguez.app/:path*",
+      "permanent": false
+    }
   ]
 }
