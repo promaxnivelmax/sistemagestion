@@ -185,3 +185,15 @@ nav.tabs button.on{background:#10262b;color:#ffc21a}
 @keyframes avIn{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
 .enl{text-decoration:none!important}
 .tag.on{background:var(--ok-bg);color:var(--ok);font-size:14px;margin:2px}
+
+/* finanzas */
+.fz-top h2{font-size:20px}
+.fz-big{font-size:28px;font-weight:900;margin-top:4px}
+.fz-bar{height:14px;border-radius:8px;margin-top:10px}
+.fz-dias{position:relative;display:flex;align-items:flex-end;gap:4px;height:170px;margin-top:8px}
+.fz-d{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.fz-d i{display:block;width:100%;max-width:26px;background:var(--pri);border-radius:5px 5px 0 0;min-height:2px}
+.fz-d i.ok{background:var(--ok)}
+.fz-d span{font-size:11px;color:var(--sub);margin-top:4px;height:14px}
+.fz-linea{position:absolute;left:0;right:0;border-top:2px dashed var(--bad);pointer-events:none}
+.list li .btn.sec{padding:6px 10px;font-size:14px}
