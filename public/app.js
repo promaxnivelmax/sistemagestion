@@ -85,6 +85,7 @@ const S = { token: null, yo: null, est: null, tab: 'hoy', f: null, rep: { per: '
 const nuevoForm = (tipo = 'venta') => ({ tipo, cat: '', monto: 0, medio: 'Efectivo', nota: '', rec: 'Nequi', ent: 'Efectivo', uid: uid() });
 
 function salir(silencioso) {
+  clearInterval(S.poll); S.ev = null; S.act = []; S.enLinea = []; S.enLineaOk = false;
   if (S.token && !silencioso) rpc('cj_salir', { p_token: S.token }).catch(() => {});
   S.token = null; S.yo = null; S.est = null;
   store.del('caja_s');
@@ -157,17 +158,21 @@ async function principal() {
   if (!S.f) S.f = nuevoForm();
   pintarMarco();
   clearInterval(S.poll);
-  S.poll = setInterval(() => { if (S.tab === 'hoy' && !document.hidden && !document.querySelector('.modal')) refrescarHoy(true); }, 30000);
+  S.v = null; S.beat = 0; S.enLinea = S.enLinea || [];
+  if (esAdmin() && S.ev == null) { try { const ev = await rpc('cj_eventos_desde', { p_token: S.token, p_desde: 0 }); S.act = ev.slice(-40); S.ev = ev.length ? ev[ev.length - 1].id : 0; } catch (e) { S.act = []; S.ev = 0; } }
+  latido();
+  S.poll = setInterval(latido, 4000);
 }
 
 function pintarMarco() {
   const tabs = esAdmin() ? [['hoy', 'Hoy'], ['rep', 'Reportes'], ['hist', 'Historial'], ['aj', 'Ajustes']] : [];
   app.innerHTML = `<header class="top"><div class="in">${marca('Caja')}<span class="who">${esc(S.yo.nombre)}</span>
-      ${esAdmin() ? '' : '<button class="lnk" id="miClave">Mi clave</button>'}<button class="lnk" id="salir">Salir</button></div>
+      ${esAdmin() ? `<button class="lnk enl" id="enLinea" title="Quién está conectado">🟢 <b id="enN">${(S.enLinea || []).length}</b></button>` : '<button class="lnk" id="miClave">Mi clave</button>'}<button class="lnk" id="salir">Salir</button></div>
       ${tabs.length ? `<nav class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</nav>` : ''}
     </header><div class="wrap" id="main"></div>`;
   document.getElementById('salir').onclick = () => salir();
   const mc = document.getElementById('miClave'); if (mc) mc.onclick = cambiarMiClave;
+  const el = document.getElementById('enLinea'); if (el) el.onclick = verActividad;
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; pintarMarco(); });
   const main = document.getElementById('main');
   if (S.tab === 'rep') return vistaReportes(main);
@@ -621,8 +626,78 @@ function editarUsuario(u) {
   });
 }
 
+/* ---------- TIEMPO REAL ---------- */
+// cada 4 segundos pregunta si algo cambió; si cambió, actualiza la pantalla abierta
+let latiendo = false;
+async function latido() {
+  if (!S.token || latiendo) return;
+  S.beat = (S.beat || 0) + 1;
+  if (document.hidden && (!esAdmin() || S.beat % 4)) return; // en segundo plano: solo el admin, cada 16 s
+  latiendo = true;
+  try {
+    const r = await rpc('cj_version', { p_token: S.token });
+    if (r.en_linea) enLinea(r.en_linea);
+    const cambio = S.v !== null && r.v !== S.v;
+    S.v = r.v;
+    if (cambio || S.pend) await actualizarVista();
+  } catch (e) { /* sin conexión: lo intenta en el próximo latido */ }
+  latiendo = false;
+}
+async function actualizarVista() {
+  if (document.querySelector('.modal')) { S.pend = true; return; }
+  S.pend = false;
+  if (esAdmin()) await nuevosEventos();
+  if (S.tab === 'hoy') return refrescarHoy(true);
+  if (S.tab === 'rep' && document.getElementById('rep')) { const [d1, d2] = rango(S.rep.per); return cargarReporte(d1, d2); }
+  if (S.tab === 'hist' && document.getElementById('hl')) return cargarHist();
+}
+const EVT = {
+  entrada: (e) => '🟢 ' + e.nombre + ' entró',
+  salida: (e) => '🔴 ' + e.nombre + ' salió',
+  registro: (e, d) => '💰 ' + e.nombre + ': ' + (TIPOS[d.tipo] || d.tipo) + ' ' + fmt(d.monto) + ' · ' + (MED[d.medio] || d.medio) + (d.categoria ? ' · ' + d.categoria : ''),
+  editado: (e, d) => '✏️ Se editó un registro de ' + e.nombre + ': ' + fmt(d.monto) + ' · ' + (MED[d.medio] || d.medio),
+  anulado: (e, d) => '🚫 Se anuló un registro de ' + e.nombre + ': ' + fmt(d.monto),
+  caja_abierta: (e) => '☀️ ' + (e.nombre || 'Alguien') + ' abrió la caja',
+  caja_cerrada: (e) => '🔒 ' + (e.nombre || 'Alguien') + ' cerró la caja',
+  caja_reabierta: () => '🔓 Se reabrió la caja',
+};
+const textoEv = e => { let d = {}; try { d = JSON.parse(e.detalle || '{}'); } catch (x) {} const f = EVT[e.tipo]; return f ? f(e, d) : ''; };
+async function nuevosEventos() {
+  let ev = [];
+  try { ev = await rpc('cj_eventos_desde', { p_token: S.token, p_desde: S.ev || 0 }); } catch (e) { return; }
+  if (!ev.length) return;
+  S.ev = ev[ev.length - 1].id;
+  S.act = (S.act || []).concat(ev).slice(-40);
+  ev.filter(e => e.usuario_id !== S.yo.id && textoEv(e)).forEach(e => aviso(textoEv(e), e.hora));
+  const box = document.getElementById('actList'); if (box) box.innerHTML = listaAct();
+}
+function enLinea(lista) {
+  const antes = (S.enLinea || []).map(x => x.id), ahora = lista.map(x => x.id);
+  if (S.enLineaOk) (S.enLinea || []).filter(x => !ahora.includes(x.id)).forEach(x => aviso('⚪ ' + x.nombre + ' se desconectó'));
+  S.enLinea = lista; S.enLineaOk = true;
+  const n = document.getElementById('enN'); if (n) n.textContent = lista.length;
+  const b = document.getElementById('enLst'); if (b) b.innerHTML = listaEnLinea();
+}
+function aviso(msg, hora) {
+  let c = document.querySelector('.avisos'); if (!c) { c = document.createElement('div'); c.className = 'avisos'; document.body.appendChild(c); }
+  const d = document.createElement('div'); d.className = 'aviso'; d.innerHTML = esc(msg) + (hora ? ' <small>' + esc(hora) + '</small>' : '');
+  d.onclick = () => d.remove(); c.appendChild(d); setTimeout(() => d.remove(), 7000);
+  if (document.hidden && window.Notification && Notification.permission === 'granted') { try { new Notification('Caja La 52', { body: msg, tag: 'caja' + Date.now() }); } catch (e) {} }
+}
+const listaEnLinea = () => (S.enLinea || []).length ? S.enLinea.map(x => '<span class="tag on">🟢 ' + esc(x.nombre) + '</span>').join(' ') : '<span class="muted">Nadie más está conectado ahora.</span>';
+const listaAct = () => (S.act || []).length ? S.act.slice().reverse().map(e => '<li><div class="d"><div>' + esc(textoEv(e) || e.tipo) + '</div><div class="muted">' + esc(e.hora) + '</div></div></li>').join('') : '<li class="muted">Todavía no hay actividad hoy.</li>';
+function verActividad() {
+  const puede = window.Notification && Notification.permission !== 'granted' && Notification.permission !== 'denied';
+  modal('<h2>En línea ahora</h2><div id="enLst" style="margin:6px 0 14px">' + listaEnLinea() + '</div><h2>Actividad de hoy</h2><ul class="list" id="actList" style="max-height:50vh;overflow:auto">' + listaAct() + '</ul>' +
+    (puede ? '<button class="btn full" id="notif" style="margin-top:12px">🔔 Avisarme también con la app minimizada</button>' : '') +
+    '<button class="btn sec full" data-close style="margin-top:8px">Cerrar</button>', box => {
+      const b = box.querySelector('#notif'); if (b) b.onclick = () => Notification.requestPermission().then(p => { toast(p === 'granted' ? 'Listo: te avisará aunque la app esté minimizada.' : 'No se activaron los avisos.'); b.remove(); });
+    });
+}
+
 /* ---------- arranque ---------- */
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.token && S.tab === 'hoy' && !document.querySelector('.modal')) refrescarHoy(true); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.token) { S.v = -1; latido(); } });
+window.addEventListener('focus', () => { if (S.token) latido(); });
 const ses = store.get('caja_s');
 if (ses && ses.token) { S.token = ses.token; principal(); }
 else pantallaLogin();
