@@ -165,7 +165,7 @@ async function principal() {
 }
 
 function pintarMarco() {
-  const tabs = esAdmin() ? [['hoy', 'Hoy'], ['rep', 'Reportes'], ['hist', 'Historial'], ['aj', 'Ajustes']] : [];
+  const tabs = esAdmin() ? [['hoy', 'Hoy'], ['rep', 'Reportes'], ['fz', 'Finanzas'], ['hist', 'Historial'], ['aj', 'Ajustes']] : [];
   app.innerHTML = `<header class="top"><div class="in">${marca('Caja')}<span class="who">${esc(S.yo.nombre)}</span>
       ${esAdmin() ? `<button class="lnk enl" id="enLinea" title="Quién está conectado">🟢 <b id="enN">${(S.enLinea || []).length}</b></button>` : '<button class="lnk" id="miClave">Mi clave</button>'}<button class="lnk" id="salir">Salir</button></div>
       ${tabs.length ? `<nav class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</nav>` : ''}
@@ -178,6 +178,7 @@ function pintarMarco() {
   if (S.tab === 'rep') return vistaReportes(main);
   if (S.tab === 'hist') return vistaHistorial(main);
   if (S.tab === 'aj') return vistaAjustes(main);
+  if (S.tab === 'fz') { if (window.FZ) return window.FZ(main); main.innerHTML = '<div class="note bad">No cargó el módulo de finanzas. Recarga la página.</div>'; return; }
   vistaHoy(main);
 }
 
@@ -650,6 +651,7 @@ async function actualizarVista() {
   if (S.tab === 'hoy') return refrescarHoy(true);
   if (S.tab === 'rep' && document.getElementById('rep')) { const [d1, d2] = rango(S.rep.per); return cargarReporte(d1, d2); }
   if (S.tab === 'hist' && document.getElementById('hl')) return cargarHist();
+  if (S.tab === 'fz' && window.FZ && window.FZ.refrescar) return window.FZ.refrescar();
 }
 const EVT = {
   entrada: (e) => '🟢 ' + e.nombre + ' entró',
@@ -694,6 +696,8 @@ function verActividad() {
       const b = box.querySelector('#notif'); if (b) b.onclick = () => Notification.requestPermission().then(p => { toast(p === 'granted' ? 'Listo: te avisará aunque la app esté minimizada.' : 'No se activaron los avisos.'); b.remove(); });
     });
 }
+
+window.CAJA = { rpc, S, fmt, esc, toast, modal, moneyInput };
 
 /* ---------- arranque ---------- */
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.token) { S.v = -1; latido(); } });
