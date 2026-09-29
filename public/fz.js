@@ -144,7 +144,7 @@ function laSemana() {
   const tomar = (q, orden) => { const r = { ef: 0, dig: 0 }; for (const k of orden) { const t = Math.min(q, src[k]); r[k] += t; src[k] -= t; q -= t; } return [r, q]; };
   const filas = [['👥 Nómina (Luis y Laura)', Math.max(0, nomSem - nomPag), nomPag, ['ef', 'dig']], ['🏪 Gastos del local', Math.max(0, gasSem - gasPag), gasPag, ['ef', 'dig']], ['💸 Tu sueldo', Math.max(0, suSem - suPag), suPag, ['dig', 'ef']]];
   const out = filas.map(([nm, q, ya, o]) => { const [r, f] = tomar(q, o); return [nm, r.ef, r.dig, q, f, ya]; });
-  out.push(['🛟 Colchón', src.ef, src.dig, null, 0, 0]);
+  out.push(['🛟 Colchón (ganancia libre)', src.ef, src.dig, null, 0, 0]);
   const cel = v => v ? fmt(v) : '—';
   const mDia = meta / 5;
   // lo que ese día se pagó desde la caja (nómina, sueldo, gastos fijos, retiros) también lo produjo el día
