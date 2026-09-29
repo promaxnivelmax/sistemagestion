@@ -12,7 +12,8 @@ let F = null, sec = 'res', mesSel = null, mainEl = null;
 
 async function cargar() {
   const { rpc, S } = C();
-  F = await rpc('fz_estado', { p_token: S.token, p_mes: mesSel });
+  const [f, w] = await Promise.all([rpc('fz_estado', { p_token: S.token, p_mes: mesSel }), rpc('fz_semana', { p_token: S.token }).catch(() => null)]);
+  f.sem = w; F = f;
 }
 
 async function FZ(main) {
@@ -52,7 +53,7 @@ function totalesMes() {
   const fueraCaja = m => !m.en_caja; // lo que salió de la caja ya está en los gastos de la caja
   const gastosLocalFuera = suma(movsDe(m => m.ambito === 'local' && (m.tipo === 'gasto' || m.tipo === 'nomina') && fueraCaja(m)));
   const gastosLocal = F.gastos_caja_mes + gastosLocalFuera;
-  const sueldo = suma(movsDe(m => m.tipo === 'sueldo'));
+  const sueldo = suma(movsDe(m => m.tipo === 'sueldo')) + (F.retiros_caja_mes || 0); // los retiros de la caja también son tu sueldo
   const nomina = suma(movsDe(m => m.tipo === 'nomina'));
   const utilidad = F.vendido_mes - gastosLocal;
   return { gastosLocal, sueldo, nomina, utilidad, queda: utilidad - sueldo };
@@ -75,7 +76,7 @@ function vResumen(b) {
       <div class="fz-big">${fmt(F.vendido_hoy)} <span class="muted">de ${fmt(F.meta_dia)}</span></div>
       <div class="bar fz-bar"><i style="width:${pct}%;background:${pct >= 100 ? 'var(--ok)' : 'var(--pri)'}"></i></div>
       <p style="margin-top:8px">${F.meta_dia <= 0 ? 'Configura tus gastos para calcular la meta.' : falta > 0 ? `Faltan <b>${fmt(falta)}</b> para cubrir lo que cuesta abrir hoy (${pct}%).` : `✅ ¡Meta cumplida! Hoy van <b>${fmt(-falta)}</b> de ganancia por encima de los costos.`}</p></div>` : ''}
-    ${esMesActual ? separaHoy() : ''}
+    ${esMesActual ? laSemana() + proximos() : ''}
     <div class="card"><h2>📅 El mes</h2>
       <div class="stats s4">
         <div class="stat"><span>Vendido</span><b>${fmt(F.vendido_mes)}</b><span style="font-weight:400">${F.dias_pasados} de ${F.dias} días</span></div>
@@ -85,10 +86,10 @@ function vResumen(b) {
       </div>
       <div class="stats s3" style="margin-top:10px">
         <div class="stat"><span>Te pagaste (sueldo)</span><b>${fmt(T.sueldo)}</b><span style="font-weight:400">de ${fmt(F.sueldo_ivan)} al mes</span></div>
-        <div class="stat"><span>Sacaste de la caja (retiros)</span><b>${fmt(F.retiros_caja_mes)}</b></div>
+        <div class="stat"><span>Te falta pagarte</span><b>${fmt(Math.max(0, F.sueldo_ivan - T.sueldo))}</b><span style="font-weight:400">${F.retiros_caja_mes ? 'incluye ' + fmt(F.retiros_caja_mes) + ' de retiros de la caja' : 'este mes'}</span></div>
         <div class="stat"><span>Queda en el local</span><b class="${T.queda >= 0 ? 'pos' : 'neg'}">${fmt(T.queda)}</b><span style="font-weight:400">ganancia − tu sueldo</span></div>
       </div>
-      ${F.retiros_caja_mes ? `<p class="muted" style="margin-top:8px">💡 Los retiros de la caja son plata que sacaste sin llamarla sueldo. Lo sano es sacar tu plata solo como <b>sueldo</b>.</p>` : ''}
+      <p class="muted" style="margin-top:8px">💡 Cuando saques plata para ti, regístrala como <b>retiro</b> en la caja o con "Pagarme mi sueldo": las dos cuentan como tu sueldo.</p>
       <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap"><button class="btn" id="pagarme">💸 Pagarme mi sueldo</button><button class="btn sec" id="irNom">👥 Pagar nómina</button></div>
     </div>
     <div class="card"><h2>📈 Ventas por día</h2><p class="muted">La línea es la meta diaria (${fmt(F.meta_dia)}).</p>
@@ -104,34 +105,107 @@ function vResumen(b) {
       <p class="muted" style="margin-top:8px">Los bonos de los muchachos no están en la meta porque cambian cada semana: se pagan de lo que pase de la meta.</p></div>`;
   b.querySelector('#pagarme').onclick = () => registrar({ ambito: 'local', tipo: 'sueldo', titulo: '💸 Pagarme mi sueldo', valor: Math.max(0, F.sueldo_ivan - T.sueldo), destino: true });
   b.querySelector('#irNom').onclick = () => { sec = 'nom'; pintar(); };
+  enganchaProximos(b);
 }
 
-/* ---------- SEPARA HOY: reparte la plata del día en bolsillos (Nequi) y sobres (efectivo) ---------- */
-function separaHoy() {
-  const { fmt } = C();
-  const cj = F.caja_hoy || {}, d = cj.dia || {}, c = cj.caja || { base: 0 };
-  const r100 = x => Math.round(x / 100) * 100;
-  let ef = c.cerrada && c.contado != null ? c.contado - (c.base || 0) : (d.mov_ef || 0);
-  let dig = (d.mov_nq || 0) + (d.mov_ll || 0);
-  ef = Math.max(0, ef); dig = Math.max(0, dig);
-  const dias = F.dias || 22;
-  const nomDia = r100(F.personas.reduce((a, p) => a + (p.esquema === 'semanal' ? p.valor / 5 : p.esquema === 'quincenal' ? p.valor * 2 / dias : p.esquema === 'mensual' ? p.valor / dias : 0), 0));
-  const gasDia = r100(F.fijos_local / dias), suDia = r100(F.sueldo_ivan / dias);
-  if (!ef && !dig) return '';
-  // efectivo para nómina y gastos del local; lo digital primero para tu sueldo
-  const src = { ef, dig }, out = [];
-  const tomar = (quiere, orden) => { const r = { ef: 0, dig: 0 }; for (const k of orden) { const t = Math.min(quiere, src[k]); r[k] += t; src[k] -= t; quiere -= t; } return [r, quiere]; };
-  const filas = [['👥 Nómina', nomDia, ['ef', 'dig']], ['🏪 Gastos del local', gasDia, ['ef', 'dig']], ['💸 Mi sueldo', suDia, ['dig', 'ef']]];
-  let falta = 0;
-  for (const [n, q, o] of filas) { const [r, f] = tomar(q, o); falta += f; out.push([n, r.ef, r.dig, q, f]); }
-  out.push(['🛟 Colchón', src.ef, src.dig, null, 0]);
+/* ---------- LA SEMANA: semáforo de lo juntado de lunes a viernes y cómo repartirlo ---------- */
+const DSEM = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
+function laSemana() {
+  const { fmt } = C(); const W = F.sem; if (!W) return '';
+  const dias = F.dias || 22, r1k = x => Math.round(x / 1000) * 1000;
+  const nomSem = r1k(F.personas.reduce((a, p) => a + (p.esquema === 'semanal' ? p.valor : p.esquema === 'quincenal' ? p.valor * 2 * 5 / dias : p.esquema === 'mensual' ? p.valor * 5 / dias : 0), 0));
+  const gasSem = r1k(F.fijos_local * 5 / dias), suSem = r1k(F.sueldo_ivan * 5 / dias);
+  const meta = nomSem + gasSem + suSem; if (!meta) return '';
+  const esNom = m => m.tipo === 'nomina' && m.esquema !== 'diario';
+  const pag = (fn, caja) => W.pagos.filter(m => fn(m) && (!caja || m.en_caja)).reduce((a, m) => a + m.valor, 0);
+  const esSu = m => m.tipo === 'sueldo', esGas = m => m.tipo === 'gasto';
+  const retiros = (W.retiros || []).reduce((a, r) => a + r.valor, 0); // retiros de la caja = te pagaste
+  const nomPag = pag(esNom), suPag = pag(esSu) + retiros, gasPag = pag(esGas);
+  // lo que se pagó desde la caja ya salió de lo juntado: cuenta como avance (hasta la meta de cada cosa)
+  const yaCaja = Math.min(pag(esNom, 1), nomSem) + Math.min(pag(esSu, 1) + retiros, suSem) + Math.min(pag(esGas, 1), gasSem);
+  const ef = W.dias.reduce((a, d) => a + d.ef, 0), dig = W.dias.reduce((a, d) => a + d.dig, 0);
+  const cubierto = Math.max(0, ef + dig + yaCaja);
+  const hoy = new Date(W.hoy + 'T12:00:00'), dw = hoy.getDay() || 7;
+  const dHoy = W.dias.find(d => d.fecha === W.hoy);
+  const hechos = Math.min(5, W.dias.filter(d => { const x = new Date(d.fecha + 'T12:00:00').getDay() || 7; return x < 6 && (d.fecha < W.hoy || d.cerrada); }).length);
+  const quedan = dw >= 6 ? 0 : 5 - hechos;
+  const esperado = meta * hechos / 5, falta = Math.max(0, meta - cubierto);
+  const ratio = esperado ? cubierto / esperado : 1;
+  const color = !hechos ? 'var(--pri)' : ratio >= 1 ? '#1a9a4b' : ratio >= 0.8 ? '#e0a800' : 'var(--bad)';
+  const pct = Math.min(100, Math.round(cubierto * 100 / meta));
+  let msg;
+  if (cubierto >= meta) msg = `🟢 <b>¡Semana cubierta!</b> Ya juntaste lo de nómina, gastos y tu sueldo. Lo que entre de aquí al viernes es colchón o ganancia.`;
+  else if (!hechos) msg = `La semana apenas empieza. Meta: <b>${fmt(r1k(meta / 5))}</b> por día.`;
+  else msg = `${ratio >= 1 ? '🟢 <b>Vas bien.</b>' : ratio >= 0.8 ? '🟡 <b>Vas un poco corto.</b>' : '🔴 <b>Vas corto.</b>'} A esta altura (${hechos} de 5 días) deberías llevar <b>${fmt(r1k(esperado))}</b>.`;
+  const pie = cubierto >= meta ? '' : quedan ? `<p style="margin-top:6px">👉 Para llegar el viernes necesitas juntar <b>${fmt(r1k(falta / quedan))}</b> por día los <b>${quedan}</b> día${quedan === 1 ? '' : 's'} que quedan${dHoy && !dHoy.cerrada && dw < 6 ? ' (contando hoy)' : ''}.</p>`
+    : `<p class="note warn" style="margin-top:6px">La semana cerró con ${fmt(falta)} menos de la meta. Reparte primero la nómina, después los gastos y lo que quede es tu sueldo.</p>`;
+  // repartir lo que hay en la mano
+  const src = { ef: Math.max(0, ef), dig: Math.max(0, dig) };
+  const tomar = (q, orden) => { const r = { ef: 0, dig: 0 }; for (const k of orden) { const t = Math.min(q, src[k]); r[k] += t; src[k] -= t; q -= t; } return [r, q]; };
+  const filas = [['👥 Nómina (Luis y Laura)', Math.max(0, nomSem - nomPag), nomPag, ['ef', 'dig']], ['🏪 Gastos del local', Math.max(0, gasSem - gasPag), gasPag, ['ef', 'dig']], ['💸 Tu sueldo', Math.max(0, suSem - suPag), suPag, ['dig', 'ef']]];
+  const out = filas.map(([nm, q, ya, o]) => { const [r, f] = tomar(q, o); return [nm, r.ef, r.dig, q, f, ya]; });
+  out.push(['🛟 Colchón', src.ef, src.dig, null, 0, 0]);
   const cel = v => v ? fmt(v) : '—';
-  return `<div class="card"><h2>💰 Separa hoy</h2>
-    <p class="muted">${c.cerrada ? 'Con lo que se contó al cerrar la caja' : 'Con lo que va del día (se actualiza al cerrar la caja)'}: <b>${fmt(ef)}</b> en efectivo y <b>${fmt(dig)}</b> en Nequi/Llave.</p>
-    <table class="t" style="margin-top:8px"><tr><th></th><th class="n">💵 Sobre (efectivo)</th><th class="n">📱 Bolsillo Nequi</th></tr>
-    ${out.map(([n, e, g, q, f]) => `<tr><td>${n}${q ? `<br><span class="muted">meta ${fmt(q)}${f ? ' · faltan ' + fmt(f) : ' ✓'}</span>` : ''}</td><td class="n">${cel(e)}</td><td class="n">${cel(g)}</td></tr>`).join('')}</table>
-    ${falta ? `<p class="note warn">Hoy no alcanzó para todo: faltan ${fmt(falta)}. Se completa con lo que sobre los días buenos.</p>` : '<p class="note ok">✓ Hoy alcanzó para todo.</p>'}
-    <p class="muted" style="margin-top:6px">Si mañana dejas base en el cajón, sácala del sobre de gastos del local y ábrela como base en la caja. Tu sueldo pásalo el fin de semana a tu cuenta personal.</p></div>`;
+  const mDia = meta / 5;
+  // lo que ese día se pagó desde la caja (nómina, sueldo, gastos fijos, retiros) también lo produjo el día
+  const delDia = f => W.pagos.filter(m => m.fecha === f && m.en_caja && (esNom(m) || esSu(m) || esGas(m))).reduce((a, m) => a + m.valor, 0) + (W.retiros || []).filter(r => r.fecha === f).reduce((a, r) => a + r.valor, 0);
+  return `<div class="card"><h2>📆 La semana</h2>
+    <div class="fz-big">${fmt(cubierto)} <span class="muted">de ${fmt(meta)}</span></div>
+    <div class="bar fz-bar"><i style="width:${pct}%;background:${color}"></i></div>
+    <p style="margin-top:8px">${msg}</p>${pie}
+    <div class="fz-sem">${W.dias.map(d => { const x = new Date(d.fecha + 'T12:00:00'), v = d.ef + d.dig + delDia(d.fecha);
+      const cl = d.fecha === W.hoy && !d.cerrada ? 'hoy' : v >= mDia ? 'ok' : v >= mDia * 0.8 ? 'med' : 'bajo';
+      return `<div class="${cl}"><span>${DSEM[x.getDay() || 7]} ${x.getDate()}</span><b>${fmt(v)}</b></div>`; }).join('')}</div>
+    <p class="muted" style="margin-top:4px">Lo que dejó cada día: efectivo (contado − base) + Nequi + lo que ese día se pagó desde la caja. Meta por día: ${fmt(r1k(mDia))}.</p>
+    <h3 style="margin:14px 0 4px">Así se reparte lo que tienes (${fmt(ef)} en efectivo · ${fmt(dig)} en Nequi)</h3>
+    <table class="t"><tr><th></th><th class="n">💵 Sobre</th><th class="n">📱 Nequi</th></tr>
+    ${out.map(([nm, e, g, q, f, ya]) => `<tr><td>${nm}${q != null ? `<br><span class="muted">${q ? 'le faltan ' + fmt(q) : '✓ completo'}${ya ? ' · ya pagaste ' + fmt(ya) : ''}${f ? ' · no alcanza por ' + fmt(f) : ''}</span>` : ''}</td><td class="n">${cel(e)}</td><td class="n">${cel(g)}</td></tr>`).join('')}</table>
+    <p class="muted" style="margin-top:6px">Meta de la semana: nómina ${fmt(nomSem)} + gastos ${fmt(gasSem)} + tu sueldo ${fmt(suSem)}. Jeimy no entra porque se le paga diario de la caja. Si sacas plata del sobre para un gasto, regístralo como gasto para que esto cuadre.</p></div>`;
+}
+
+/* ---------- PRÓXIMOS PAGOS: lo que vence en los próximos 7 días ---------- */
+function proximos() {
+  const { fmt, esc } = C();
+  const hoy = new Date(F.hoy + 'T12:00:00'), lim = new Date(hoy); lim.setDate(lim.getDate() + 7);
+  const ult = (y, m) => new Date(y, m + 1, 0, 12).getDate();
+  const it = [], PF = (F.sem && F.sem.pagos_fijos) || [];
+  F.fijos.filter(f => f.dia_pago && f.valor > 0).forEach(f => {
+    for (const k of [0, 1]) {
+      const y = hoy.getFullYear(), m = hoy.getMonth() + k;
+      const fe = new Date(y, m, Math.min(f.dia_pago, ult(y, m)), 12);
+      if (fe > lim) continue;
+      if (f.tipo === 'ingreso') { if (fe >= hoy) it.push({ ing: true, nombre: f.nombre, fe, valor: f.valor }); continue; }
+      // lo abonado a este vencimiento: pagos desde 20 días antes hasta 10 días después
+      const ini = new Date(fe - 20 * 864e5), fin = new Date(+fe + 10 * 864e5);
+      const parcial = PF.filter(x => x.fijo === f.id).filter(x => { const d = new Date(x.fecha + 'T12:00:00'); return d >= ini && d < fin; }).reduce((a, x) => a + x.valor, 0);
+      const pagado = parcial >= f.valor;
+      if (fe < hoy && pagado) continue;
+      it.push({ f, nombre: f.nombre, fe, valor: f.valor, pagado, parcial, casa: f.ambito === 'personal' });
+    }
+  });
+  const sab = new Date(F.lunes + 'T12:00:00'); sab.setDate(sab.getDate() + 5);
+  F.personas.filter(p => p.esquema === 'semanal' && p.valor > 0).forEach(p =>
+    it.push({ p, nombre: 'Nómina · ' + p.nombre, fe: sab, valor: p.valor, pagado: p.pagado_semana >= p.valor, parcial: p.pagado_semana }));
+  if (!it.length) return '';
+  it.sort((a, b) => a.fe - b.fe || (a.pagado - b.pagado));
+  const DS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+  const cuando = fe => { const d = Math.round((fe - hoy) / 864e5); return d < 0 ? `<span class="neg">venció hace ${-d} día${d === -1 ? '' : 's'}</span>` : d === 0 ? '<b class="neg">hoy</b>' : d === 1 ? '<b>mañana</b>' : `en ${d} días · ${DS[fe.getDay()]} ${fe.getDate()}`; };
+  const porPagar = it.filter(x => !x.ing && !x.pagado).reduce((a, x) => a + x.valor - (x.parcial || 0), 0);
+  const entra = it.filter(x => x.ing).reduce((a, x) => a + x.valor, 0);
+  window.__fzProx = it;
+  return `<div class="card"><h2>🗓️ Próximos pagos (7 días)</h2>
+    <div class="stats s2"><div class="stat"><span>Por pagar</span><b class="neg">${fmt(porPagar)}</b></div><div class="stat"><span>Entra</span><b class="pos">${fmt(entra)}</b></div></div>
+    <ul class="list" style="margin-top:8px">${it.map((x, i) => `<li><div class="d"><div>${x.ing ? '📥' : x.casa ? '🏠' : x.p ? '👥' : '🏪'} <b>${esc(x.nombre)}</b></div>
+      <div class="muted">${cuando(x.fe)}${x.parcial && !x.pagado ? ' · abonado ' + fmt(x.parcial) : ''}</div></div>
+      <b class="${x.ing ? 'pos' : ''}">${fmt(x.valor)}</b>${x.ing ? '<span class="tag venta">entra</span>' : x.pagado ? '<span class="tag venta">✓ pagado</span>' : `<button class="btn sec" data-prox="${i}">Pagar</button>`}</li>`).join('')}</ul>
+    <p class="muted" style="margin-top:6px">Sale de los días de pago que pusiste en ⚙️ Configurar. Al tocar "Pagar" queda registrado y se marca ✓.</p></div>`;
+}
+function enganchaProximos(b) {
+  b.querySelectorAll('[data-prox]').forEach(x => x.onclick = () => {
+    const it = window.__fzProx[Number(x.dataset.prox)], falta = it.valor - (it.parcial || 0);
+    if (it.p) registrar({ ambito: 'local', tipo: 'nomina', titulo: 'Sueldo · ' + it.p.nombre, valor: falta, persona: it.p.id, categoria: 'Sueldo' });
+    else registrar({ ambito: it.f.ambito, tipo: 'gasto', titulo: 'Pagar ' + it.f.nombre, valor: falta, fijo: it.f.id, categoria: it.f.nombre, soloCuentas: it.casa });
+  });
 }
 
 /* ---------- LOCAL ---------- */
