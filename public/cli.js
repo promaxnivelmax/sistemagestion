@@ -153,7 +153,7 @@ function ficha(ir) {
       <div class="cli-tabs"><button data-modo="hv" class="${modo === 'hv' ? 'on' : ''}">📄 Hojas de vida</button><button data-modo="docs" class="${modo === 'docs' ? 'on' : ''}">📑 Documentos</button></div></div>`;
   const secHV = `<div class="card" id="secHV"><div class="row"><h3 class="grow cli-h">📄 Hojas de vida</h3><button class="btn chico" id="nuevaHV">＋ Nueva</button></div>
       ${d.hvs.length ? d.hvs.map((h, n) => `<div class="cli-hv"><div class="cli-hv-d"><b>${esc(h.titulo || 'Hoja de vida ' + (n + 1))}</b><span class="muted">${(h.estudios || []).length} estudio(s) · ${(h.experiencias || []).length ? (h.experiencias || []).length + ' experiencia(s)' : 'sin experiencia'}</span></div>
-          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}">⬇️ Word</button><button class="btn pdf" data-hvp="${h.id}">📕 PDF</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
+          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}">⬇️ Word</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
         : '<p class="muted" style="margin:8px 0 0">Todavía no tiene hoja de vida. Toca "＋ Nueva".</p>'}</div>`;
   const secDocs = `<div class="card" id="secDocs"><h3 class="cli-h">📑 Documentos</h3><p class="muted cli-sub">Se abre con sus datos puestos para revisar y completar.</p>
       <div class="cli-docs">${Object.entries(DOCS).map(([k, x]) => `<button class="cli-doc" data-doc="${k}"><span>${x.e}</span>${esc(x.t)}</button>`).join('')}</div></div>`;
@@ -166,7 +166,6 @@ function ficha(ir) {
   if (nv) nv.onclick = () => { const h = nuevaHV(d.hvs.length ? 'Hoja de vida ' + (d.hvs.length + 1) : 'Principal'); asistenteHV(h, true); };
   mainEl.querySelectorAll('[data-hved]').forEach(b => b.onclick = () => asistenteHV(JSON.parse(JSON.stringify(d.hvs.find(h => h.id === b.dataset.hved))), false));
   mainEl.querySelectorAll('[data-hvw]').forEach(b => b.onclick = () => wordHV(d.hvs.find(h => h.id === b.dataset.hvw), b));
-  mainEl.querySelectorAll('[data-hvp]').forEach(b => b.onclick = () => wordHV(d.hvs.find(h => h.id === b.dataset.hvp), b, 'pdf'));
   mainEl.querySelectorAll('[data-hvdup]').forEach(b => b.onclick = async () => {
     const h = JSON.parse(JSON.stringify(d.hvs.find(x => x.id === b.dataset.hvdup))); h.id = uid(); h.titulo = (h.titulo || 'Hoja de vida') + ' (copia)';
     d.hvs.push(h); try { await guardarCli(); C().toast('Copia creada ✓ Tócale ✏️ Editar para cambiarle el nombre'); ficha(modo); } catch (e) { C().toast(e.message, true); }
@@ -350,7 +349,6 @@ function asistenteHV(h, nueva) {
     acciones: [
       ['💾 Guardar', async () => { await guardarHV(); C().toast('Hoja de vida guardada ✓'); ficha('hv'); return false; }],
       ['⬇️ Word', async () => { await guardarHV(); await wordHV(h); return '✅ Guardada y descargada en Word.'; }, true],
-      ['📕 PDF', async () => { await guardarHV(); await wordHV(h, null, 'pdf'); return '✅ Guardada y descargada en PDF.'; }, true],
     ],
   }, () => { if (cli.id) ficha('hv'); else { cli = null; verLista(); } });
 }
