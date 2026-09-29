@@ -26,7 +26,7 @@ window.FZ = FZ;
 
 function pintar() {
   const { esc } = C();
-  const secs = [['res', '📊 Resumen'], ['loc', '🏪 Local'], ['nom', '👥 Nómina'], ['yo', '🏠 Mi plata'], ['cfg', '⚙️ Configurar']];
+  const secs = [['res', '📊 Resumen'], ['loc', '🏪 Local'], ['nom', '👥 Nómina'], ['yo', '🏠 Casa'], ['cfg', '⚙️ Configurar']];
   const m = new Date(F.mes + 'T12:00:00');
   mainEl.innerHTML = `<div class="card fz-top"><div class="row"><h2 class="grow" style="margin:0">💼 Finanzas · ${MESES[m.getMonth()]} ${m.getFullYear()}</h2>
       <button class="chip" id="mAnt" title="Mes anterior">‹</button><button class="chip" id="mSig" title="Mes siguiente" ${F.mes >= F.hoy.slice(0, 8) + '01' ? 'disabled' : ''}>›</button></div>
@@ -158,19 +158,19 @@ function vYo(b) {
   const gastos = movsDe(m => m.ambito === 'personal' && m.tipo === 'gasto');
   const porCat = {}; gastos.forEach(m => porCat[m.categoria || 'Otro'] = (porCat[m.categoria || 'Otro'] || 0) + m.valor);
   const total = F.cuentas.reduce((a, c) => a + Number(c.saldo), 0);
-  b.innerHTML = `<div class="card"><div class="row"><h2 class="grow">🏦 Mis cuentas</h2><b>${fmt(total)}</b></div>
+  b.innerHTML = `<div class="card"><div class="row"><h2 class="grow">🏦 Cuentas de la casa</h2><b>${fmt(total)}</b></div>
       <ul class="list">${F.cuentas.map(c => `<li><div class="d"><div>${{ banco: '🏦', billetera: '📱', inversion: '📈', efectivo: '💵' }[c.tipo] || ''} ${esc(c.nombre)}</div><div class="muted">actualizado ${esc(c.actualizado)}</div></div><b>${fmt(c.saldo)}</b><button class="btn sec" data-cta="${c.id}">Ajustar</button></li>`).join('')}</ul>
-      <p class="muted" style="margin-top:6px">Los saldos bajan y suben solos cuando registras gastos o ingresos con esa cuenta. Si no cuadran con tu app del banco, toca "Ajustar".</p></div>
-    <div class="card"><h2>🧭 ¿Cuánto necesitas que te pague el local?</h2>
-      <table class="t"><tr><td>Tus gastos fijos al mes</td><td class="n">${fmt(tGas)}</td></tr><tr><td>− Otros ingresos (honorarios, acuerdo)</td><td class="n">${fmt(tIng)}</td></tr>
-        <tr><td><b>Sueldo mínimo que necesitas del local</b></td><td class="n"><b>${fmt(necesita)}</b></td></tr><tr><td>Sueldo que tienes configurado</td><td class="n">${fmt(F.sueldo_ivan)}</td></tr></table>
-      ${tGas === 0 ? '<p class="note warn">Escribe tus gastos fijos personales en ⚙️ Configurar para calcular esto.</p>' : F.sueldo_ivan < necesita ? `<p class="note warn">Tu sueldo configurado no alcanza para tus gastos fijos. Súbelo a por lo menos ${fmt(necesita)} o baja gastos.</p>` : '<p class="note ok">✓ Tu sueldo cubre tus gastos fijos.</p>'}</div>
-    <div class="card"><div class="row" style="gap:8px;flex-wrap:wrap"><h2 class="grow">💳 Mis gastos del mes</h2><button class="btn" id="gP">＋ Gasto</button><button class="btn sec" id="iP">＋ Ingreso</button></div>
+      <p class="muted" style="margin-top:6px">Los saldos bajan y suben solos cuando registras gastos o ingresos con esa cuenta. Si no cuadran con tu app del banco, toca "Ajustar". Si la plata de Laura paga algo del local, regístralo en 🏪 Local escogiendo "Plata de Laura" como origen.</p></div>
+    <div class="card"><h2>🧭 ¿Cuánto necesita la casa del local?</h2>
+      <table class="t"><tr><td>Gastos fijos de la casa al mes</td><td class="n">${fmt(tGas)}</td></tr><tr><td>− Otros ingresos (Laura, acuerdo, honorarios)</td><td class="n">${fmt(tIng)}</td></tr>
+        <tr><td><b>Lo mínimo que la casa necesita del local</b></td><td class="n"><b>${fmt(necesita)}</b></td></tr><tr><td>Sueldo que tienes configurado</td><td class="n">${fmt(F.sueldo_ivan)}</td></tr></table>
+      ${tGas === 0 ? '<p class="note warn">Escribe tus gastos fijos personales en ⚙️ Configurar para calcular esto.</p>' : F.sueldo_ivan < necesita ? `<p class="note warn">Tu sueldo configurado no alcanza para tus gastos fijos. Súbelo a por lo menos ${fmt(necesita)} o baja gastos.</p>` : (necesita === 0 ? '<p class="note ok">✓ Con los otros ingresos de la casa se cubren los gastos fijos. Tu sueldo del local queda para ahorrar, invertir o gastos variables.</p>' : '<p class="note ok">✓ Tu sueldo cubre lo que le falta a la casa.</p>')}</div>
+    <div class="card"><div class="row" style="gap:8px;flex-wrap:wrap"><h2 class="grow">💳 Gastos de la casa este mes</h2><button class="btn" id="gP">＋ Gasto</button><button class="btn sec" id="iP">＋ Ingreso</button></div>
       ${Object.keys(porCat).length ? `<table class="t" style="margin:8px 0">${Object.entries(porCat).sort((a, c) => c[1] - a[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${fmt(v)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="n"><b>${fmt(suma(gastos))}</b></td></tr></table>` : ''}
       <ul class="list">${listaMovs(movsDe(m => m.ambito === 'personal' || m.tipo === 'sueldo'))}</ul></div>`;
   b.querySelectorAll('[data-cta]').forEach(x => x.onclick = () => { const c = F.cuentas.find(y => y.id == x.dataset.cta); editar('cuenta', c); });
-  b.querySelector('#gP').onclick = () => registrar({ ambito: 'personal', tipo: 'gasto', titulo: '💳 Gasto personal', cats: CATS_PER, soloCuentas: true });
-  b.querySelector('#iP').onclick = () => registrar({ ambito: 'personal', tipo: 'ingreso', titulo: '💰 Ingreso personal', cats: ['Honorarios de edil', 'Acuerdo', 'Otro ingreso'], soloCuentas: true, destino: true });
+  b.querySelector('#gP').onclick = () => registrar({ ambito: 'personal', tipo: 'gasto', titulo: '💳 Gasto de la casa', cats: CATS_PER, soloCuentas: true });
+  b.querySelector('#iP').onclick = () => registrar({ ambito: 'personal', tipo: 'ingreso', titulo: '💰 Ingreso de la casa', cats: ['Salario de Laura', 'Honorarios de edil', 'Acuerdo', 'Otro ingreso'], soloCuentas: true, destino: true });
   enganchaAnular(b);
 }
 
@@ -181,15 +181,15 @@ function vConfig(b) {
     <ul class="list">${lista.map(f => `<li><div class="d"><div>${esc(f.nombre)}</div><div class="muted">${f.dia_pago ? 'día ' + f.dia_pago : ''}</div></div><b>${fmt(f.valor)}</b><button class="btn sec" data-fijo="${f.id}">Editar</button></li>`).join('') || '<li class="muted">Nada todavía.</li>'}</ul></div>`;
   b.innerHTML = `<div class="card"><h2>💸 Tu sueldo y los días</h2>
       <label class="lbl">¿Cuánto te va a pagar el local al mes?</label><input class="inp money" id="sIv" inputmode="numeric" value="${F.sueldo_ivan ? F.sueldo_ivan.toLocaleString('es-CO') : ''}" placeholder="$0">
-      <p class="muted">Empieza con lo que necesitas para tus gastos fijos (míralo en 🏠 Mi plata). Puedes cambiarlo cuando quieras.</p>
+      <p class="muted">Empieza con lo que necesitas para tus gastos fijos (míralo en 🏠 Casa). Puedes cambiarlo cuando quieras.</p>
       <label class="lbl">Días que abre el local al mes</label><input class="inp" id="dM" inputmode="numeric" value="${F.dias_fijo || ''}" placeholder="Automático: lunes a viernes (${F.dias} este mes)">
       <button class="btn full" id="gCfg" style="margin-top:10px">Guardar</button></div>
     ${grupo('🏪 Gastos fijos del local', F.fijos.filter(f => f.ambito === 'local' && f.tipo === 'gasto'), { ambito: 'local', tipo: 'gasto' })}
-    ${grupo('🏠 Mis gastos fijos personales', F.fijos.filter(f => f.ambito === 'personal' && f.tipo === 'gasto'), { ambito: 'personal', tipo: 'gasto' })}
-    ${grupo('💰 Mis otros ingresos fijos', F.fijos.filter(f => f.ambito === 'personal' && f.tipo === 'ingreso'), { ambito: 'personal', tipo: 'ingreso' })}
+    ${grupo('🏠 Gastos fijos de la casa', F.fijos.filter(f => f.ambito === 'personal' && f.tipo === 'gasto'), { ambito: 'personal', tipo: 'gasto' })}
+    ${grupo('💰 Otros ingresos de la casa (Laura, acuerdo, honorarios)', F.fijos.filter(f => f.ambito === 'personal' && f.tipo === 'ingreso'), { ambito: 'personal', tipo: 'ingreso' })}
     <div class="card"><div class="row"><h2 class="grow">👥 Personas en nómina</h2><button class="btn sec" id="nP">＋ Agregar</button></div>
       <ul class="list">${F.personas.map(p => `<li><div class="d"><div>${esc(p.nombre)}</div><div class="muted">${p.valor ? fmt(p.valor) + ' ' + ESQ[p.esquema] : 'sin sueldo'}</div></div><button class="btn sec" data-per="${p.id}">Editar</button></li>`).join('')}</ul></div>
-    <div class="card"><div class="row"><h2 class="grow">🏦 Mis cuentas</h2><button class="btn sec" id="nC">＋ Agregar</button></div>
+    <div class="card"><div class="row"><h2 class="grow">🏦 Cuentas de la casa</h2><button class="btn sec" id="nC">＋ Agregar</button></div>
       <ul class="list">${F.cuentas.map(c => `<li><div class="d"><div>${esc(c.nombre)}</div></div><b>${fmt(c.saldo)}</b><button class="btn sec" data-cta="${c.id}">Editar</button></li>`).join('')}</ul></div>`;
   C().moneyInput(b.querySelector('#sIv'));
   b.querySelector('#gCfg').onclick = async () => {
