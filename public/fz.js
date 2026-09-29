@@ -75,6 +75,7 @@ function vResumen(b) {
       <div class="fz-big">${fmt(F.vendido_hoy)} <span class="muted">de ${fmt(F.meta_dia)}</span></div>
       <div class="bar fz-bar"><i style="width:${pct}%;background:${pct >= 100 ? 'var(--ok)' : 'var(--pri)'}"></i></div>
       <p style="margin-top:8px">${F.meta_dia <= 0 ? 'Configura tus gastos para calcular la meta.' : falta > 0 ? `Faltan <b>${fmt(falta)}</b> para cubrir lo que cuesta abrir hoy (${pct}%).` : `✅ ¡Meta cumplida! Hoy van <b>${fmt(-falta)}</b> de ganancia por encima de los costos.`}</p></div>` : ''}
+    ${esMesActual ? separaHoy() : ''}
     <div class="card"><h2>📅 El mes</h2>
       <div class="stats s4">
         <div class="stat"><span>Vendido</span><b>${fmt(F.vendido_mes)}</b><span style="font-weight:400">${F.dias_pasados} de ${F.dias} días</span></div>
@@ -103,6 +104,34 @@ function vResumen(b) {
       <p class="muted" style="margin-top:8px">Los bonos de los muchachos no están en la meta porque cambian cada semana: se pagan de lo que pase de la meta.</p></div>`;
   b.querySelector('#pagarme').onclick = () => registrar({ ambito: 'local', tipo: 'sueldo', titulo: '💸 Pagarme mi sueldo', valor: Math.max(0, F.sueldo_ivan - T.sueldo), destino: true });
   b.querySelector('#irNom').onclick = () => { sec = 'nom'; pintar(); };
+}
+
+/* ---------- SEPARA HOY: reparte la plata del día en bolsillos (Nequi) y sobres (efectivo) ---------- */
+function separaHoy() {
+  const { fmt } = C();
+  const cj = F.caja_hoy || {}, d = cj.dia || {}, c = cj.caja || { base: 0 };
+  const r100 = x => Math.round(x / 100) * 100;
+  let ef = c.cerrada && c.contado != null ? c.contado - (c.base || 0) : (d.mov_ef || 0);
+  let dig = (d.mov_nq || 0) + (d.mov_ll || 0);
+  ef = Math.max(0, ef); dig = Math.max(0, dig);
+  const dias = F.dias || 22;
+  const nomDia = r100(F.personas.reduce((a, p) => a + (p.esquema === 'semanal' ? p.valor / 5 : p.esquema === 'quincenal' ? p.valor * 2 / dias : p.esquema === 'mensual' ? p.valor / dias : 0), 0));
+  const gasDia = r100(F.fijos_local / dias), suDia = r100(F.sueldo_ivan / dias);
+  if (!ef && !dig) return '';
+  // efectivo para nómina y gastos del local; lo digital primero para tu sueldo
+  const src = { ef, dig }, out = [];
+  const tomar = (quiere, orden) => { const r = { ef: 0, dig: 0 }; for (const k of orden) { const t = Math.min(quiere, src[k]); r[k] += t; src[k] -= t; quiere -= t; } return [r, quiere]; };
+  const filas = [['👥 Nómina', nomDia, ['ef', 'dig']], ['🏪 Gastos del local', gasDia, ['ef', 'dig']], ['💸 Mi sueldo', suDia, ['dig', 'ef']]];
+  let falta = 0;
+  for (const [n, q, o] of filas) { const [r, f] = tomar(q, o); falta += f; out.push([n, r.ef, r.dig, q, f]); }
+  out.push(['🛟 Colchón', src.ef, src.dig, null, 0]);
+  const cel = v => v ? fmt(v) : '—';
+  return `<div class="card"><h2>💰 Separa hoy</h2>
+    <p class="muted">${c.cerrada ? 'Con lo que se contó al cerrar la caja' : 'Con lo que va del día (se actualiza al cerrar la caja)'}: <b>${fmt(ef)}</b> en efectivo y <b>${fmt(dig)}</b> en Nequi/Llave.</p>
+    <table class="t" style="margin-top:8px"><tr><th></th><th class="n">💵 Sobre (efectivo)</th><th class="n">📱 Bolsillo Nequi</th></tr>
+    ${out.map(([n, e, g, q, f]) => `<tr><td>${n}${q ? `<br><span class="muted">meta ${fmt(q)}${f ? ' · faltan ' + fmt(f) : ' ✓'}</span>` : ''}</td><td class="n">${cel(e)}</td><td class="n">${cel(g)}</td></tr>`).join('')}</table>
+    ${falta ? `<p class="note warn">Hoy no alcanzó para todo: faltan ${fmt(falta)}. Se completa con lo que sobre los días buenos.</p>` : '<p class="note ok">✓ Hoy alcanzó para todo.</p>'}
+    <p class="muted" style="margin-top:6px">Si mañana dejas base en el cajón, sácala del sobre de gastos del local y ábrela como base en la caja. Tu sueldo pásalo el fin de semana a tu cuenta personal.</p></div>`;
 }
 
 /* ---------- LOCAL ---------- */
