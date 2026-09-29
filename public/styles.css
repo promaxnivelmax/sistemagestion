@@ -197,3 +197,15 @@ nav.tabs button.on{background:#10262b;color:#ffc21a}
 .fz-d span{font-size:11px;color:var(--sub);margin-top:4px;height:14px}
 .fz-linea{position:absolute;left:0;right:0;border-top:2px dashed var(--bad);pointer-events:none}
 .list li .btn.sec{padding:6px 10px;font-size:14px}
+.fz-sem{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.fz-sem>div{flex:1;min-width:58px;border:2px solid var(--line);border-radius:10px;padding:6px 4px;text-align:center;background:var(--card)}
+.fz-sem span{display:block;font-size:12px;color:var(--sub)}
+.fz-sem b{display:block;font-size:13px}
+.fz-sem .ok{background:#dff3e6;border-color:#1a9a4b}.fz-sem .med{background:#fff4cc;border-color:#e0a800}.fz-sem .bajo{background:var(--bad-bg);border-color:var(--bad)}.fz-sem .hoy{border-style:dashed}
+.movs-caja{max-height:330px;overflow-y:auto;overscroll-behavior:contain;margin-top:8px;border-top:1px solid var(--line);-webkit-overflow-scrolling:touch}
+.movs-caja.abierto{max-height:none}
+.stat .split{display:block;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+.stat .split>span{display:flex !important;justify-content:space-between;align-items:baseline;gap:6px;font-size:13px !important;font-weight:400 !important;color:var(--tx) !important;margin:2px 0 0 !important}
+.stat .split>span>b{font-size:14px !important;font-weight:800 !important;margin:0 !important;display:inline !important}
+.stat .split i{font-style:normal;color:var(--sub);white-space:nowrap;font-size:12px}
+.stat .split>span>b{white-space:nowrap}
