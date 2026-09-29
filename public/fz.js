@@ -101,7 +101,11 @@ function vResumen(b) {
   const { fmt, esc } = C();
   const T = totalesMes();
   // lo que te tocaba sacarte de sueldo hasta hoy (por días que abre el local)
-  const habiles = (() => { let n = 0; const d = new Date(F.mes + 'T12:00:00'), h = new Date(F.hoy + 'T12:00:00'); while (d <= h && d.getMonth() === new Date(F.mes + 'T12:00:00').getMonth()) { if (d.getDay() % 6) n++; d.setDate(d.getDate() + 1); } return n; })();
+  // se cuenta desde el día en que empezaste de cero (Configurar), no desde el 1 del mes
+  const inicio = (F.sem && F.sem.inicio) || F.mes;
+  const hab = hasta => { let n = 0; const d = new Date((inicio > F.mes ? inicio : F.mes) + 'T12:00:00'), h = new Date(hasta + 'T12:00:00'), m = new Date(F.mes + 'T12:00:00').getMonth(); while (d <= h && d.getMonth() === m) { if (d.getDay() % 6) n++; d.setDate(d.getDate() + 1); } return n; };
+  const habiles = hab(F.hoy);
+  const suMes = Math.round(F.sueldo_ivan * Math.min(hab(F.fin), F.dias) / (F.dias || 1)); // sueldo que te toca este mes
   const tocaSu = Math.round(F.sueldo_ivan * Math.min(habiles, F.dias) / (F.dias || 1));
   const difSu = T.sueldo - tocaSu;
   const esMesActual = F.mes === F.hoy.slice(0, 8) + '01';
@@ -127,7 +131,7 @@ function vResumen(b) {
       </div>
       <div class="stats s3" style="margin-top:10px">
         <div class="stat"><span>Te pagaste (sueldo)</span><b class="${esMesActual && difSu > F.sueldo_ivan * 0.05 ? 'neg' : ''}">${fmt(T.sueldo)}</b><span style="font-weight:400">${esMesActual ? 'a hoy te tocaban ' + fmt(tocaSu) : 'de ' + fmt(F.sueldo_ivan) + ' al mes'}</span></div>
-        <div class="stat"><span>${T.sueldo > F.sueldo_ivan ? 'Te pasaste del mes' : 'Te falta pagarte'}</span><b class="${T.sueldo > F.sueldo_ivan ? 'neg' : ''}">${fmt(Math.abs(F.sueldo_ivan - T.sueldo))}</b><span style="font-weight:400">de ${fmt(F.sueldo_ivan)} al mes${F.retiros_caja_mes ? ' · incluye ' + fmt(F.retiros_caja_mes) + ' de retiros' : ''}</span></div>
+        <div class="stat"><span>${T.sueldo > suMes ? 'Te pasaste del mes' : 'Te falta pagarte'}</span><b class="${T.sueldo > suMes ? 'neg' : ''}">${fmt(Math.abs(suMes - T.sueldo))}</b><span style="font-weight:400">de ${fmt(suMes)} este mes${suMes < F.sueldo_ivan ? ' (empezaste el ' + Number(inicio.slice(8)) + ')' : ''}${F.retiros_caja_mes ? ' · incluye ' + fmt(F.retiros_caja_mes) + ' de retiros' : ''}</span></div>
         <div class="stat"><span>Queda en el local</span><b class="${T.queda >= 0 ? 'pos' : 'neg'}">${fmt(T.queda)}</b><span style="font-weight:400">ganancia − tu sueldo</span></div>
       </div>
       ${esMesActual && F.sueldo_ivan ? (difSu > F.sueldo_ivan * 0.05 ? `<p class="note bad" style="margin-top:8px">⚠️ <b>Vas adelantado en tu sueldo:</b> a hoy (${habiles} de ${F.dias} días) te tocaban ${fmt(tocaSu)} y ya te sacaste ${fmt(T.sueldo)}, o sea <b>${fmt(difSu)} de más</b>. Frena los retiros hasta que el mes te alcance.</p>` : difSu < -F.sueldo_ivan * 0.05 ? `<p class="note ok" style="margin-top:8px">✓ Vas por debajo: a hoy te tocaban ${fmt(tocaSu)} y llevas ${fmt(T.sueldo)}. Todavía puedes sacarte hasta <b>${fmt(-difSu)}</b> sin pasarte.</p>` : `<p class="note ok" style="margin-top:8px">✓ Vas al día con tu sueldo: te tocaban ${fmt(tocaSu)} y llevas ${fmt(T.sueldo)}.</p>`) : ''}
@@ -145,7 +149,7 @@ function vResumen(b) {
         <tr><td>÷ días que abres (lunes a viernes)</td><td class="n">${F.dias}</td></tr>
         <tr><td><b>Meta diaria</b></td><td class="n"><b>${fmt(F.meta_dia)}</b></td></tr></table>
       <p class="muted" style="margin-top:8px">Los bonos de los muchachos no están en la meta porque cambian cada semana: se pagan de lo que pase de la meta.</p></div>`;
-  b.querySelector('#pagarme').onclick = () => registrar({ ambito: 'local', tipo: 'sueldo', titulo: '💸 Pagarme mi sueldo', valor: Math.max(0, F.sueldo_ivan - T.sueldo), destino: true });
+  b.querySelector('#pagarme').onclick = () => registrar({ ambito: 'local', tipo: 'sueldo', titulo: '💸 Pagarme mi sueldo', valor: Math.max(0, suMes - T.sueldo), destino: true });
   b.querySelector('#irNom').onclick = () => { sec = 'nom'; pintar(); };
   enganchaProximos(b);
 }
