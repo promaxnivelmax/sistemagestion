@@ -165,7 +165,7 @@ async function principal() {
 }
 
 function pintarMarco() {
-  const tabs = esAdmin() ? [['hoy', 'Hoy'], ['rep', 'Reportes'], ['fz', 'Finanzas'], ['hist', 'Historial'], ['aj', 'Ajustes']] : [];
+  const tabs = esAdmin() ? [['hoy', 'Hoy'], ['cli', 'Clientes'], ['rep', 'Reportes'], ['fz', 'Finanzas'], ['hist', 'Historial'], ['aj', 'Ajustes']] : [['hoy', 'Hoy'], ['cli', '👥 Clientes']];
   app.innerHTML = `<header class="top"><div class="in">${marca('Caja')}<span class="who">${esc(S.yo.nombre)}</span>
       ${esAdmin() ? `<button class="lnk enl" id="enLinea" title="Quién está conectado">🟢 <b id="enN">${(S.enLinea || []).length}</b></button>` : '<button class="lnk" id="miClave">Mi clave</button>'}<button class="lnk" id="salir">Salir</button></div>
       ${tabs.length ? `<nav class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</nav>` : ''}
@@ -178,6 +178,7 @@ function pintarMarco() {
   if (S.tab === 'rep') return vistaReportes(main);
   if (S.tab === 'hist') return vistaHistorial(main);
   if (S.tab === 'aj') return vistaAjustes(main);
+  if (S.tab === 'cli') { if (window.CLI) return window.CLI(main); main.innerHTML = '<div class="note bad">No cargó el módulo de clientes. Recarga la página.</div>'; return; }
   if (S.tab === 'fz') { if (window.FZ) return window.FZ(main); main.innerHTML = '<div class="note bad">No cargó el módulo de finanzas. Recarga la página.</div>'; return; }
   vistaHoy(main);
 }
