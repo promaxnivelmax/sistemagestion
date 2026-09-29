@@ -19,7 +19,7 @@ const DIA = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const dt = iso => new Date(iso + 'T12:00:00Z');
 const addDays = (iso, n) => { const d = dt(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const fFecha = iso => { const d = dt(iso); return `${DIA[d.getUTCDay()]} ${d.getUTCDate()} ${MES[d.getUTCMonth()]}`; };
-const TIPOS = { venta: 'Venta', gasto: 'Gasto', retiro: 'Retiro', cambio: 'Cambio', ingreso: 'Entrada' };
+const TIPOS = { venta: 'Venta', gasto: 'Gasto', retiro: 'Retiro Iván', cambio: 'Cambio', ingreso: 'Entrada' };
 const MEDIOS = [['Efectivo', '💵 Efectivo'], ['Nequi', '📱 Nequi'], ['Llave', '🔑 Llave (Nu)']];
 const MED = { Efectivo: 'Efectivo', Nequi: 'Nequi', Llave: 'Llave Bre-B (Nu)' };
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
@@ -187,7 +187,7 @@ function vistaHoy(main) {
   main.classList.add('hoy'); main.classList.toggle('adm', esAdmin());
   main.innerHTML = `<div class="col colL"><div class="card" id="regBox"></div></div>
     <div class="col colR"><div id="cajaBox"></div><div id="resumen"></div>
-    <div class="card" id="movsCard"><h2>${esAdmin() ? 'Movimientos de hoy' : 'Mis registros de hoy'}</h2><ul class="list" id="movs"></ul></div>
+    <div class="card" id="movsCard"><div class="row"><h2 class="grow" style="margin:0">${esAdmin() ? 'Movimientos de hoy' : 'Mis registros de hoy'} <span class="muted" id="movsN"></span></h2><button class="lnk" id="movsVer"></button></div><ul class="list movs-caja${S.movsAbierto ? ' abierto' : ''}" id="movs"></ul></div>
     <div id="cierreBox"></div></div>`;
   pintarForm();
   pintarHoy();
@@ -230,15 +230,18 @@ function pintarHoy() {
   const res = document.getElementById('resumen');
   if (esAdmin()) {
     const d = E.dia;
+    const ven = porMedio(E.movs, m => m.tipo === 'venta'), gas = porMedio(E.movs, m => m.tipo === 'gasto'), ret = porMedio(E.movs, m => m.tipo === 'retiro');
+    const gan = { Efectivo: ven.Efectivo - gas.Efectivo, Nequi: ven.Nequi - gas.Nequi, Llave: ven.Llave - gas.Llave };
+    const usaLl = E.llave_dia || ven.Llave || gas.Llave || ret.Llave;
     res.innerHTML = `<div class="stats s4" style="margin-top:12px">
-        ${stat('Ventas hoy', fmt(d.ventas), d.n_ventas + ' ventas')}
-        ${stat('Gastos', fmt(d.gastos), '', d.gastos ? 'neg' : '')}
-        ${stat('Retiros', fmt(d.retiros))}
-        ${stat('Ganancia del día', fmt(d.ventas - d.gastos), '', d.ventas - d.gastos >= 0 ? 'pos' : 'neg')}</div>
-      <div class="stats s3" style="margin-top:10px">
+        ${statM('Ventas hoy', d.ventas, ven, '', d.n_ventas + ' ventas')}
+        ${statM('Gastos', d.gastos, gas, d.gastos ? 'neg' : '')}
+        ${statM('Ganancia del día', d.ventas - d.gastos, gan, d.ventas - d.gastos >= 0 ? 'pos' : 'neg', 'ventas − gastos')}
+        ${statM('💸 Retiros (tu sueldo)', d.retiros, ret, '', 'lo que te llevaste')}</div>
+      <div class="stats ${usaLl ? 's3' : ''}" style="margin-top:10px">
         ${stat('💵 Debe haber en el cajón', fmt(E.esperado_ef), 'base + efectivo que entró − lo que salió')}
-        ${stat('📱 Nequi del día', fmt(E.nequi_dia), 'lo que entró por Nequi ± cambios')}
-        ${stat('🔑 Llave del día', fmt(E.llave_dia), 'lo que entró por la llave ± cambios')}</div>
+        ${stat('📱 Nequi del día', fmt(E.nequi_dia), 'lo que entró por Nequi − lo que salió ± cambios')}
+        ${usaLl ? stat('🔑 Llave del día', fmt(E.llave_dia), 'lo que entró por la llave ± cambios') : ''}</div>
       ${E.dia.ingresos ? `<p class="muted" style="margin-top:6px">Entradas que no son venta hoy: <b>${fmt(E.dia.ingresos)}</b></p>` : ''}
       ${tablaBonos(E.bonos, 'Bonos de esta semana')}`;
   } else {
@@ -250,19 +253,45 @@ function pintarHoy() {
 
   // salidas del día (gastos y retiros): siempre visibles
   const sal = E.salidas || [];
-  if (c && !c.cerrada) res.insertAdjacentHTML('beforeend', `<div class="note ${sal.length ? 'info' : 'warn'} salidas" style="margin-top:10px">💸 <b>Salidas de hoy:</b> ${sal.length ? `${sal.length} (${fmt(sal.reduce((a, x) => a + x.monto, 0))})` : 'ninguna registrada'}.
-    ¿Salió plata del cajón (almuerzo, compras, pagos, plata que se llevó alguien)? <button class="lnk" data-go="gasto">Registrar gasto</button> · <button class="lnk" data-go="retiro">Registrar retiro</button></div>`);
+  const salM = porMedio(E.movs, m => m.tipo === 'gasto' || m.tipo === 'retiro');
+  const salTxt = Object.entries(salM).filter(([, v]) => v).map(([k, v]) => `${{ Efectivo: '💵', Nequi: '📱', Llave: '🔑' }[k] || ''} ${fmt(v)}`).join(' · ');
+  if (c && !c.cerrada) res.insertAdjacentHTML('beforeend', `<div class="note ${sal.length ? 'info' : 'warn'} salidas" style="margin-top:10px">💸 <b>Salidas de hoy:</b> ${sal.length ? `${sal.length} (${fmt(sal.reduce((a, x) => a + x.monto, 0))})${salTxt ? ' → ' + salTxt : ''}` : 'ninguna registrada'}.
+    ¿Salió plata del cajón (almuerzo, compras, pagos)? <button class="lnk" data-go="gasto">Registrar gasto</button> · <button class="lnk" data-go="retiro">Retiro de Iván</button></div>`);
   res.querySelectorAll('[data-go]').forEach(b => b.onclick = () => irA(b.dataset.go));
 
   // movimientos
   const ul = document.getElementById('movs');
   ul.innerHTML = E.movs.length ? E.movs.map(m => filaMov(m, true)).join('') : '<li class="muted">Todavía no hay registros hoy.</li>';
+  const mn = document.getElementById('movsN'), mv = document.getElementById('movsVer');
+  if (mn) mn.textContent = E.movs.length ? '(' + E.movs.length + ')' : '';
+  if (mv) { mv.hidden = E.movs.length <= 5; mv.textContent = S.movsAbierto ? 'Encoger ▴' : 'Ver todos ▾';
+    mv.onclick = () => { S.movsAbierto = !S.movsAbierto; ul.classList.toggle('abierto', S.movsAbierto); mv.textContent = S.movsAbierto ? 'Encoger ▴' : 'Ver todos ▾'; if (!S.movsAbierto) ul.scrollTop = 0; }; }
   ul.onclick = e => { const b = e.target.closest('[data-anular],[data-editar]'); if (!b) return; const m = E.movs.find(x => x.id == (b.dataset.anular || b.dataset.editar)); if (b.dataset.anular) anular(m); else editar(m); };
 
   // cierre
   const cb = document.getElementById('cierreBox');
   cb.innerHTML = c && !c.cerrada ? `<button class="btn sec full" id="cerrar">🔒 Cerrar la caja (fin del día)</button>` : '';
   const cr = document.getElementById('cerrar'); if (cr) cr.onclick = cerrarCaja;
+}
+
+// suma por medio (Efectivo, Nequi, Llave) de los movimientos que cumplan fn
+function porMedio(movs, fn) {
+  const r = { Efectivo: 0, Nequi: 0, Llave: 0 };
+  (movs || []).forEach(m => { if (!m.anulado && fn(m) && r[m.medio] != null) r[m.medio] += m.monto; });
+  return r;
+}
+// cuadro grande con la división por medio debajo (💵 efectivo · 📱 Nequi · 🔑 llave)
+function statM(t, total, o, cls, sub) {
+  const part = (ic, v) => `<span><i>${ic}</i> <b class="${v < 0 ? 'neg' : ''}">${v < 0 ? '−' : ''}${fmt(Math.abs(v))}</b></span>`;
+  return `<div class="stat"><span>${t}</span><b class="${cls || ''}">${total < 0 ? '−' : ''}${fmt(Math.abs(total))}</b>${sub ? `<span style="font-weight:400">${esc(sub)}</span>` : ''}
+    ${o ? `<div class="split">${part('💵 Efectivo', o.Efectivo || 0)}${part('📱 Nequi', o.Nequi || 0)}${o.Llave ? part('🔑 Llave', o.Llave) : ''}</div>` : ''}</div>`;
+}
+// división por medio de los totales del reporte: mT(T,'ventas','gastos') = ventas − gastos en cada medio
+function mT(T, a, ...menos) {
+  if (T[a + '_ef'] == null && a !== 'ventas') return null;
+  const k = { Efectivo: 'ef', Nequi: 'nq', Llave: 'll' }, r = {};
+  for (const [m, x] of Object.entries(k)) r[m] = Number(T[a + '_' + x] || 0) - menos.reduce((s2, b) => s2 + Number(T[b + '_' + x] || 0), 0);
+  return r;
 }
 
 const stat = (t, v, s, cls) => `<div class="stat"><span>${t}</span><b class="${cls || ''}">${v}</b>${s ? `<span style="font-weight:400">${esc(s)}</span>` : ''}</div>`;
@@ -294,7 +323,7 @@ function filaMov(m, hoy) {
 }
 
 /* ---------- formulario de registro ---------- */
-const TXT_BTN = { venta: 'Guardar venta', gasto: 'Guardar gasto', retiro: 'Guardar retiro', cambio: 'Guardar cambio', ingreso: 'Guardar entrada' };
+const TXT_BTN = { venta: 'Guardar venta', gasto: 'Guardar gasto', retiro: 'Guardar retiro de Iván', cambio: 'Guardar cambio', ingreso: 'Guardar entrada' };
 const TECLA_TIPO = { v: 'venta', g: 'gasto', r: 'retiro', c: 'cambio', i: 'ingreso' };
 const TECLA_MEDIO = { e: 'Efectivo', n: 'Nequi', l: 'Llave' };
 
@@ -313,19 +342,19 @@ function pintarForm() {
     cuerpo += `<span class="lbl">${f.tipo === 'venta' ? '¿Qué vendiste?' : '¿En qué se gastó?'}</span>
       <div class="chips" id="cats">${lista.map(n => `<button type="button" class="chip ${f.cat === n ? 'on' : ''}" data-cat="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
   }
-  if (f.tipo === 'retiro') cuerpo += `<p class="muted" style="margin-top:10px">Plata que <b>sale de la caja</b> sin ser un gasto: la que se lleva Iván, una consignación, etc.</p>`;
+  if (f.tipo === 'retiro') cuerpo += `<p class="muted" style="margin-top:10px">La plata que <b>se lleva Iván</b> de la caja. Cuenta como su sueldo.</p>`;
   if (f.tipo === 'ingreso') cuerpo += `<p class="muted" style="margin-top:10px">Plata que <b>llega y no es una venta</b>: te mandaron a la llave o a Nequi, te devolvieron un préstamo, etc. No cuenta como venta ni para los bonos.</p>`;
   if (f.tipo === 'cambio') cuerpo += `<span class="lbl">¿Qué recibiste?</span>${segMedios('rec', f.rec)}
       <span class="lbl">¿Qué entregaste?</span>${segMedios('ent', f.ent, f.rec)}`;
   cuerpo += `<span class="lbl">Valor</span><input class="inp money" id="monto" inputmode="numeric" autocomplete="off" placeholder="$0" value="${f.monto ? f.monto.toLocaleString('es-CO') : ''}">
     <div class="chips" style="margin-top:8px" id="quick">${quick.map(q => `<button type="button" class="chip" data-q="${q}">+${(q / 1000)}.000</button>`).join('')}<button type="button" class="chip" data-q="0">Borrar</button></div>`;
   if (f.tipo !== 'cambio') cuerpo += `<span class="lbl">${{ venta: '¿Cómo pagaron?', ingreso: '¿Por dónde llegó?' }[f.tipo] || '¿Cómo salió la plata?'}</span>${segMedios('m', f.medio)}`;
-  const ph = { venta: 'Nota (opcional)', gasto: 'Detalle: almuerzo, resma de papel… ', retiro: '¿Quién se la llevó o para qué?', cambio: 'Nota (opcional)', ingreso: '¿De quién o de qué es esa plata?' }[f.tipo];
+  const ph = { venta: 'Nota (opcional)', gasto: 'Detalle: almuerzo, resma de papel… ', retiro: 'Nota (opcional)', cambio: 'Nota (opcional)', ingreso: '¿De quién o de qué es esa plata?' }[f.tipo];
   cuerpo += `<span class="lbl">Nota</span><input class="inp" id="nota" maxlength="200" placeholder="${ph}" value="${esc(f.nota)}">`;
   box.innerHTML = `<div class="big-actions">
       <button type="button" class="act venta ${f.tipo === 'venta' ? 'on' : ''}" data-t="venta">＋ Venta<small>entra plata${PC() ? ' · tecla V' : ''}</small></button>
       <button type="button" class="act ${f.tipo === 'gasto' ? 'on' : ''}" data-t="gasto">− Gasto<small>almuerzo, papelería…${PC() ? ' · G' : ''}</small></button>
-      <button type="button" class="act ${f.tipo === 'retiro' ? 'on' : ''}" data-t="retiro">↑ Retiro<small>sacar plata de la caja${PC() ? ' · R' : ''}</small></button>
+      <button type="button" class="act ${f.tipo === 'retiro' ? 'on' : ''}" data-t="retiro">↑ Retiro Iván<small>plata que se lleva Iván${PC() ? ' · R' : ''}</small></button>
       <button type="button" class="act ${f.tipo === 'cambio' ? 'on' : ''}" data-t="cambio">⇄ Cambio<small>Nequi, llave ↔ efectivo${PC() ? ' · C' : ''}</small></button>
       <button type="button" class="act ${f.tipo === 'ingreso' ? 'on' : ''}" data-t="ingreso">↓ Entrada<small>llega plata, no es venta${PC() ? ' · I' : ''}</small></button></div>
     ${cuerpo}<button type="button" class="btn full ${f.tipo === 'venta' || f.tipo === 'ingreso' ? 'ok' : f.tipo === 'cambio' ? '' : 'bad'}" id="guardar">${TXT_BTN[f.tipo]}${PC() ? ' <small class="kbd">Enter</small>' : ''}</button>
@@ -390,14 +419,13 @@ async function guardar() {
   const f = S.f;
   if ((f.tipo === 'venta' || f.tipo === 'gasto') && !f.cat) return toast(f.tipo === 'venta' ? 'Elige qué vendiste' + (PC() ? ' (flechas ← →)' : '') : 'Elige en qué se gastó', true);
   if (!f.monto) { const m = document.getElementById('monto'); if (m) m.focus(); return toast('Escribe el valor', true); }
-  if (f.tipo === 'retiro' && !f.nota.trim()) { document.getElementById('nota').focus(); return toast('Escribe quién se llevó la plata o para qué', true); }
   if (f.tipo === 'ingreso' && !f.nota.trim()) { document.getElementById('nota').focus(); return toast('Escribe de quién o de qué es esa plata', true); }
   if (f.monto >= 1000000 && !confirmar(`¿Seguro? El valor es ${fmt(f.monto)}`)) return;
   guardando = true;
   const btn = document.getElementById('guardar'); if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
   try {
     const medio = f.tipo === 'cambio' ? f.rec : f.medio;
-    const cat = f.tipo === 'cambio' ? 'Cambio' : f.tipo === 'retiro' ? 'Retiro' : f.tipo === 'ingreso' ? 'Entrada' : f.cat;
+    const cat = f.tipo === 'cambio' ? 'Cambio' : f.tipo === 'retiro' ? 'Retiro Iván' : f.tipo === 'ingreso' ? 'Entrada' : f.cat;
     const r = await rpc('cj_registrar_v2', { p_token: S.token, p_tipo: f.tipo, p_medio: medio, p_categoria: cat, p_monto: f.monto,
       p_nota: f.nota.trim(), p_sale: f.tipo === 'cambio' ? f.ent : null, p_cliente: f.uid });
     toast(r.repetido ? `Ya estaba guardado: ${TIPOS[r.tipo]} de ${fmt(r.monto)}` : `✓ ${TIPOS[r.tipo]} de ${fmt(r.monto)} guardado`);
@@ -450,17 +478,17 @@ function cerrarCaja() {
   const sal = (S.est && S.est.salidas) || [];
   const tot = sal.reduce((a, x) => a + x.monto, 0);
   modal(`<h3>🔒 Cerrar la caja · paso 1 de 2</h3>
-    <p class="muted">Antes de contar, revisa que <b>todo lo que salió del cajón hoy</b> esté registrado: almuerzos, compras, pagos, plata que se llevó alguien.</p>
+    <p class="muted">Antes de contar, revisa que <b>todo lo que salió del cajón hoy</b> esté registrado: almuerzos, compras, pagos, y lo que se llevó Iván.</p>
     <div class="card" style="margin:10px 0;padding:10px 12px">${sal.length ? `<table class="t">${sal.map(x => `<tr><td><span class="tag ${x.tipo}">${TIPOS[x.tipo]}</span> ${esc(x.categoria)}${x.nota ? ' · ' + esc(x.nota) : ''}<br><span class="muted">${esc(x.hora)} · ${esc(x.usuario)} · ${esc(MED[x.medio] || x.medio)}</span></td><td class="n neg">−${fmt(x.monto)}</td></tr>`).join('')}
-      <tr><td><b>Total salidas</b></td><td class="n"><b>${fmt(tot)}</b></td></tr></table>` : '<p class="muted" style="margin:0">No hay gastos ni retiros registrados hoy.</p>'}</div>
-    <div class="row" style="gap:8px"><button class="btn sec grow" id="addG">＋ Falta un gasto</button><button class="btn sec grow" id="addR">＋ Falta un retiro</button></div>
+      <tr><td><b>Total salidas</b></td><td class="n"><b>${fmt(tot)}</b></td></tr></table>` : '<p class="muted" style="margin:0">No hay salidas registradas hoy.</p>'}</div>
+    <div class="row" style="gap:8px"><button class="btn sec grow" id="addG">＋ Falta un gasto</button><button class="btn sec grow" id="addR">＋ Falta un retiro de Iván</button></div>
     <label class="row confirma" style="margin-top:12px;align-items:flex-start"><input type="checkbox" id="okSal" style="width:22px;height:22px;flex-shrink:0">
-      <span>${sal.length ? 'Confirmo que <b>todos</b> los gastos y retiros de hoy están registrados.' : 'Confirmo que hoy <b>no salió plata</b> del cajón (ni gastos ni retiros).'}</span></label>
+      <span>${sal.length ? 'Confirmo que <b>todo</b> lo que salió hoy está registrado.' : 'Confirmo que hoy <b>no salió plata</b> del cajón.'}</span></label>
     <button class="btn full" id="sig" disabled>Siguiente: contar el efectivo →</button><button class="btn sec full" data-close>Cancelar</button>`, (b, close) => {
     const ok = b.querySelector('#okSal'), sig = b.querySelector('#sig');
     ok.onchange = () => { sig.disabled = !ok.checked; };
     b.querySelector('#addG').onclick = () => { close(); irA('gasto'); toast('Registra el gasto y vuelve a tocar "Cerrar la caja"'); };
-    b.querySelector('#addR').onclick = () => { close(); irA('retiro'); toast('Registra el retiro y vuelve a tocar "Cerrar la caja"'); };
+    const aR = b.querySelector('#addR'); if (aR) aR.onclick = () => { close(); irA('retiro'); toast('Registra el retiro y vuelve a tocar "Cerrar la caja"'); };
     sig.onclick = () => {
       if (!ok.checked) return;
       b.innerHTML = `<h3>🔒 Cerrar la caja · paso 2 de 2</h3><p class="muted">Cuenta <b>todo el efectivo</b> que hay en el cajón (incluida la base) y escríbelo.</p>
@@ -537,11 +565,11 @@ async function cargarReporte(d1, d2) {
   const faltas = R.cajas.filter(c => c.cerrada && c.diferencia).reduce((a, c) => a + c.diferencia, 0);
   box.innerHTML = `<p class="muted" style="margin-top:14px">${titulo}</p>
     <div class="stats s4" style="margin-top:6px">
-      ${stat('Ventas', fmt(T.ventas), T.n_ventas + ' ventas' + (T.dias > 1 ? ' · ' + fmt(T.ventas / T.dias) + '/día' : ''))}
-      ${stat('Gastos', fmt(T.gastos), '', T.gastos ? 'neg' : '')}
-      ${stat('Ganancia', fmt(gan), 'ventas − gastos', gan >= 0 ? 'pos' : 'neg')}
-      ${stat('Retiros', fmt(T.retiros), 'plata que salió para ti')}</div>
-    <div class="stats s3" style="margin-top:10px">${stat('💵 Vendido en efectivo', fmt(T.ventas_ef))}${stat('📱 Vendido por Nequi', fmt(T.ventas_nq))}${stat('🔑 Vendido por Llave', fmt(T.ventas_ll || 0))}</div>
+      ${statM('Ventas', T.ventas, mT(T, 'ventas'), '', T.n_ventas + ' ventas' + (T.dias > 1 ? ' · ' + fmt(T.ventas / T.dias) + '/día' : ''))}
+      ${statM('Gastos', T.gastos, mT(T, 'gastos'), T.gastos ? 'neg' : '')}
+      ${statM('Ganancia', gan, mT(T, 'ventas', 'gastos'), gan >= 0 ? 'pos' : 'neg', 'ventas − gastos')}
+      ${statM('💸 Retiros (tu sueldo)', T.retiros, mT(T, 'retiros'), '', 'lo que te llevaste')}</div>
+    ${T.gastos_ef != null ? `<div class="stats" style="margin-top:10px">${statM('🏪 Le queda al local', gan - T.retiros, mT(T, 'ventas', 'gastos', 'retiros'), gan - T.retiros >= 0 ? 'pos' : 'neg', 'ganancia − tu sueldo')}</div>` : ''}
     ${T.ingresos ? `<p class="muted" style="margin-top:6px">Entradas que no son venta: <b>${fmt(T.ingresos)}</b></p>` : ''}
     <div class="card"><h2>Por empleado</h2>${R.por_empleado.length ? R.por_empleado.map(x => `<div style="margin-bottom:10px"><div class="row"><b class="grow">${esc(x.nombre)}</b><span>${fmt(x.ventas)} <span class="muted">· ${x.n}</span></span></div><div class="bar"><i style="width:${x.ventas / maxE * 100}%"></i></div></div>`).join('') : '<p class="muted">Sin ventas.</p>'}</div>
     <div class="card"><h2>Lo que más se vende</h2>${R.por_cat_venta.length ? R.por_cat_venta.map(x => `<div style="margin-bottom:10px"><div class="row"><span class="grow">${esc(x.categoria)}</span><span>${fmt(x.total)} <span class="muted">· ${x.n}</span></span></div><div class="bar"><i style="width:${x.total / maxC * 100}%"></i></div></div>`).join('') : '<p class="muted">Sin ventas.</p>'}</div>
