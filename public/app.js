@@ -90,7 +90,7 @@ async function salir(silencioso) {
   const quien = S.yo && S.yo.nombre;
   S.token = null; S.yo = null; S.est = null;
   store.del('caja_s');
-  if (!silencioso) await ola('¡Hasta luego' + (quien ? ', ' + quien : '') + '!', '👋');
+  if (!silencioso) ola('¡Hasta luego' + (quien ? ', ' + quien : '') + '!', '👋');
   pantallaLogin();
 }
 
@@ -113,8 +113,8 @@ function ola(texto, emoji) {
     m.innerHTML = `<div class="marea-agua"><div class="ola o1">${OLA_SVG('#0a6a73', 1)}${OLA_SVG('#0a6a73', 1)}</div></div><div class="marea-txt"><span>${emoji || '🌊'}</span>${esc(texto)}</div>`;
     document.body.appendChild(m);
     requestAnimationFrame(() => m.classList.add('sube'));
-    setTimeout(() => { ok(); m.classList.add('baja'); }, 1150);
-    setTimeout(() => m.remove(), 2000);
+    setTimeout(() => { ok(); m.classList.add('baja'); }, 900);
+    setTimeout(() => m.remove(), 1700);
   });
 }
 
@@ -153,7 +153,7 @@ function pedirPin(id, nombre) {
       const r = await rpc('cj_login', { p_usuario: id, p_pin: pin });
       S.token = r.token; S.yo = r; store.set('caja_s', { token: r.token });
       S.tab = 'hoy'; S.f = nuevoForm();
-      await ola('¡Hola, ' + nombre + '!', '☀️');
+      ola('¡Hola, ' + nombre + '!', '☀️'); // la animación va encima mientras la caja carga (no hace esperar)
       agua(false);
       await principal();
     } catch (e) { err.textContent = e.message; err.classList.remove('hide'); pin = ''; pinta(); }
@@ -765,3 +765,8 @@ const ses = store.get('caja_s');
 if (ses && ses.token) { S.token = ses.token; principal(); }
 else pantallaLogin();
 })();
+
+// guarda la app en el teléfono/computador: abre al instante aunque internet esté lento
+if ('serviceWorker' in navigator && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
