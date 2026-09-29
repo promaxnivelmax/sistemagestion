@@ -296,3 +296,23 @@ body.en-login #app{position:relative;z-index:2;padding-bottom:120px}
 .cli-ic button{width:34px;height:32px;border:2px solid #10262b;border-radius:9px;background:#fff;font-size:15px;padding:0;box-shadow:0 2px 0 #10262b;cursor:pointer}
 .cli-ic button:hover{background:#ffc21a}.cli-ic button:active{transform:translateY(2px);box-shadow:none}
 .cli-mas{padding:8px 12px;font-size:12.5px;border-top:1px solid rgba(16,38,43,.12)}
+/* cuentas de cobro e historial */
+.cli-emp{border:2px solid rgba(16,38,43,.15);border-radius:12px;margin-top:10px;overflow:hidden;background:#fff}
+.cli-emp>.cli-fila{background:#fffbef}
+.cli-ic button.mas{background:#ffc21a;font-weight:900}
+.cli-hechos{display:flex;flex-direction:column}
+.cli-hecho{display:flex;align-items:center;gap:8px;padding:5px 12px;border-top:1px dashed rgba(16,38,43,.15);font-size:13px}
+.cli-hecho span{flex:1;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cli-hecho i{font-style:normal;color:var(--sub);font-size:12px;white-space:nowrap}
+.cli-ic1{width:30px;height:28px;border:2px solid #10262b;border-radius:8px;background:#fff;font-size:13px;padding:0;cursor:pointer}
+.cli-tabs button{white-space:nowrap;padding:7px 4px;font-size:12.5px}
+/* trámites */
+.cli-copia{display:flex;flex-wrap:wrap;gap:6px}
+.cli-copia button{display:flex;flex-direction:column;align-items:flex-start;border:2px solid #10262b;border-radius:10px;background:#fff;padding:4px 9px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 2px 0 #10262b}
+.cli-copia button i{font-style:normal;font-weight:700;font-size:10.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px}
+.cli-copia button:active{transform:translateY(2px);box-shadow:none}
+.cli-tg h4{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:#0d7c86;margin:14px 0 6px}
+.cli-tl{display:flex;flex-wrap:wrap;gap:6px}
+.cli-tl a{display:inline-block;padding:5px 10px;border:2px solid rgba(16,38,43,.25);border-radius:999px;background:#fff;color:#10262b;text-decoration:none;font-weight:700;font-size:13px}
+.cli-tl a:hover{border-color:#10262b;background:#ffc21a}
+.cli-fe{display:flex;flex-direction:column;gap:2px}.cli-fe span{font-size:11px;color:var(--sub);font-weight:700}
+.cli-tabs{display:grid!important;grid-template-columns:repeat(4,1fr)}
