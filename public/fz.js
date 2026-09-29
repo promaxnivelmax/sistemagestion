@@ -100,6 +100,10 @@ function totalesMes() {
 function vResumen(b) {
   const { fmt, esc } = C();
   const T = totalesMes();
+  // lo que te tocaba sacarte de sueldo hasta hoy (por días que abre el local)
+  const habiles = (() => { let n = 0; const d = new Date(F.mes + 'T12:00:00'), h = new Date(F.hoy + 'T12:00:00'); while (d <= h && d.getMonth() === new Date(F.mes + 'T12:00:00').getMonth()) { if (d.getDay() % 6) n++; d.setDate(d.getDate() + 1); } return n; })();
+  const tocaSu = Math.round(F.sueldo_ivan * Math.min(habiles, F.dias) / (F.dias || 1));
+  const difSu = T.sueldo - tocaSu;
   const esMesActual = F.mes === F.hoy.slice(0, 8) + '01';
   const pct = F.meta_dia ? Math.min(100, Math.round(F.vendido_hoy * 100 / F.meta_dia)) : 0;
   const falta = F.meta_dia - F.vendido_hoy;
@@ -122,10 +126,11 @@ function vResumen(b) {
         <div class="stat"><span>Ganancia del local</span><b class="${T.utilidad >= 0 ? 'pos' : 'neg'}">${fmt(T.utilidad)}</b><span style="font-weight:400">ventas − gastos</span></div>
       </div>
       <div class="stats s3" style="margin-top:10px">
-        <div class="stat"><span>Te pagaste (sueldo)</span><b>${fmt(T.sueldo)}</b><span style="font-weight:400">de ${fmt(F.sueldo_ivan)} al mes</span></div>
-        <div class="stat"><span>Te falta pagarte</span><b>${fmt(Math.max(0, F.sueldo_ivan - T.sueldo))}</b><span style="font-weight:400">${F.retiros_caja_mes ? 'incluye ' + fmt(F.retiros_caja_mes) + ' de retiros de la caja' : 'este mes'}</span></div>
+        <div class="stat"><span>Te pagaste (sueldo)</span><b class="${esMesActual && difSu > F.sueldo_ivan * 0.05 ? 'neg' : ''}">${fmt(T.sueldo)}</b><span style="font-weight:400">${esMesActual ? 'a hoy te tocaban ' + fmt(tocaSu) : 'de ' + fmt(F.sueldo_ivan) + ' al mes'}</span></div>
+        <div class="stat"><span>${T.sueldo > F.sueldo_ivan ? 'Te pasaste del mes' : 'Te falta pagarte'}</span><b class="${T.sueldo > F.sueldo_ivan ? 'neg' : ''}">${fmt(Math.abs(F.sueldo_ivan - T.sueldo))}</b><span style="font-weight:400">de ${fmt(F.sueldo_ivan)} al mes${F.retiros_caja_mes ? ' · incluye ' + fmt(F.retiros_caja_mes) + ' de retiros' : ''}</span></div>
         <div class="stat"><span>Queda en el local</span><b class="${T.queda >= 0 ? 'pos' : 'neg'}">${fmt(T.queda)}</b><span style="font-weight:400">ganancia − tu sueldo</span></div>
       </div>
+      ${esMesActual && F.sueldo_ivan ? (difSu > F.sueldo_ivan * 0.05 ? `<p class="note bad" style="margin-top:8px">⚠️ <b>Vas adelantado en tu sueldo:</b> a hoy (${habiles} de ${F.dias} días) te tocaban ${fmt(tocaSu)} y ya te sacaste ${fmt(T.sueldo)}, o sea <b>${fmt(difSu)} de más</b>. Frena los retiros hasta que el mes te alcance.</p>` : difSu < -F.sueldo_ivan * 0.05 ? `<p class="note ok" style="margin-top:8px">✓ Vas por debajo: a hoy te tocaban ${fmt(tocaSu)} y llevas ${fmt(T.sueldo)}. Todavía puedes sacarte hasta <b>${fmt(-difSu)}</b> sin pasarte.</p>` : `<p class="note ok" style="margin-top:8px">✓ Vas al día con tu sueldo: te tocaban ${fmt(tocaSu)} y llevas ${fmt(T.sueldo)}.</p>`) : ''}
       <p class="muted" style="margin-top:8px">💡 Cuando saques plata para ti, regístrala como <b>retiro</b> en la caja o con "Pagarme mi sueldo": las dos cuentan como tu sueldo.</p>
       <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap"><button class="btn" id="pagarme">💸 Pagarme mi sueldo</button><button class="btn sec" id="irNom">👥 Pagar nómina</button></div>
     </div>
