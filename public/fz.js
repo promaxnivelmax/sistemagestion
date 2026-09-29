@@ -12,8 +12,11 @@ let F = null, sec = 'res', mesSel = null, mainEl = null;
 
 async function cargar() {
   const { rpc, S } = C();
-  const [f, w] = await Promise.all([rpc('fz_estado', { p_token: S.token, p_mes: mesSel }), rpc('fz_semana', { p_token: S.token }).catch(() => null)]);
-  f.sem = w; F = f;
+  const [f, w, pt] = await Promise.all([rpc('fz_estado', { p_token: S.token, p_mes: mesSel }), rpc('fz_semana', { p_token: S.token }).catch(() => null),
+    rpc('fz_portafolio', { p_token: S.token }).catch(() => null)]);
+  f.sem = w; f.port = pt; F = f;
+  // el valor de las cuentas de inversión sale de los precios en línea
+  if (pt) F.cuentas.forEach(c => { const v = valorCuenta(c.id); if (v) { c.saldo = v.valor; c.enLinea = v; } });
 }
 
 async function FZ(main) {
@@ -24,6 +27,40 @@ async function FZ(main) {
 }
 FZ.refrescar = async () => { if (!mainEl || !document.body.contains(mainEl) || document.querySelector('.modal')) return; try { await cargar(); pintar(); } catch (e) {} };
 window.FZ = FZ;
+// precios en línea: se actualizan cada 3 minutos mientras Finanzas está abierta
+setInterval(() => { if (document.visibilityState === 'visible' && (sec === 'yo' || sec === 'res')) FZ.refrescar(); }, 180000);
+
+/* ---------- PORTAFOLIO: valor en línea de cada posición ---------- */
+function calcPos(p) {
+  const fx = p.moneda === 'USD' ? Number(F.port.usdcop) : 1;
+  const precio = p.precio != null ? Number(p.precio) : Number(p.costo_prom);
+  const valor = Math.round(Number(p.cantidad) * precio * fx);
+  const costo = p.costo_cop ? Number(p.costo_cop) : Math.round(Number(p.cantidad) * Number(p.costo_prom) * fx);
+  return { precio, valor, costo, gan: valor - costo, pct: costo ? (valor - costo) * 100 / costo : 0, hoyPct: p.cambio_pct != null ? Number(p.cambio_pct) : null };
+}
+function valorCuenta(id) {
+  const ps = ((F.port && F.port.posiciones) || []).filter(p => p.cuenta_id === id);
+  if (!ps.length) return null;
+  const xs = ps.map(p => Object.assign({ p }, calcPos(p)));
+  const valor = xs.reduce((a, x) => a + x.valor, 0), costo = xs.reduce((a, x) => a + x.costo, 0);
+  const hoy = xs.reduce((a, x) => a + (x.hoyPct != null ? x.valor - x.valor / (1 + x.hoyPct / 100) : 0), 0);
+  return { valor, costo, gan: valor - costo, pct: costo ? (valor - costo) * 100 / costo : 0, hoy: Math.round(hoy), xs };
+}
+function signo(v, fmt, pct) { const t = (v >= 0 ? '+' : '−') + (pct ? Math.abs(v).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + '%' : fmt(Math.abs(v))); return `<span class="${v >= 0 ? 'pos' : 'neg'}">${t}</span>`; }
+function filaCuenta(c) {
+  const { fmt, esc } = C();
+  const ic = { banco: '🏦', billetera: '📱', inversion: '📈', efectivo: '💵' }[c.tipo] || '';
+  const v = c.enLinea;
+  if (!v) return `<li><div class="d"><div>${ic} ${esc(c.nombre)}</div><div class="muted">actualizado ${esc(c.actualizado)}</div></div><b>${fmt(c.saldo)}</b><button class="btn sec" data-cta="${c.id}">Ajustar</button></li>`;
+  const usd = v.xs.some(x => x.p.moneda === 'USD');
+  return `<li class="fz-port"><details><summary><div class="d"><div>${ic} <b>${esc(c.nombre)}</b> <span class="muted">▾ ver</span></div>
+      <div class="muted">invertiste ${fmt(v.costo)} · ${signo(v.gan, fmt)} (${signo(v.pct, fmt, 1)})${v.hoy ? ' · hoy ' + signo(v.hoy, fmt) : ''}</div></div><b>${fmt(v.valor)}</b></summary>
+    <table class="t" style="margin-top:6px"><tr><th>Qué tienes</th><th class="n">Vale hoy</th><th class="n">Ganas</th></tr>
+    ${v.xs.map(x => { const p = x.p, m = p.moneda === 'USD' ? (n => 'US$' + Number(n).toLocaleString('es-CO', { maximumFractionDigits: 2 })) : fmt;
+      return `<tr><td><b>${esc(p.nombre)}</b><br><span class="muted">${Number(p.cantidad).toLocaleString('es-CO', { maximumFractionDigits: 4 })} × ${m(x.precio)}${x.hoyPct != null ? ' · hoy ' + signo(x.hoyPct, fmt, 1) : ''}<br>compraste a ${m(p.costo_prom)}${p.simbolo ? '' : ' · sin precio en línea'}</span></td>
+        <td class="n">${fmt(x.valor)}</td><td class="n">${signo(x.gan, fmt)}<br><span class="muted">${signo(x.pct, fmt, 1)}</span></td></tr>`; }).join('')}</table>
+    <p class="muted" style="margin-top:4px">Precios de Yahoo Finanzas${v.xs[0].p.actualizado ? ', ' + esc(v.xs[0].p.actualizado) : ''}${usd ? ` · dólar a ${fmt(F.port.usdcop)}` : ''}. Se actualizan solos cada pocos minutos. Cambia tus acciones en ⚙️ Configurar.</p></details></li>`;
+}
 
 function pintar() {
   const { esc } = C();
@@ -164,6 +201,7 @@ function laSemana() {
 }
 
 /* ---------- PRÓXIMOS PAGOS: lo que vence en los próximos 7 días ---------- */
+const isoD = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 function proximos() {
   const { fmt, esc } = C();
   const hoy = new Date(F.hoy + 'T12:00:00'), lim = new Date(hoy); lim.setDate(lim.getDate() + 7);
@@ -177,7 +215,8 @@ function proximos() {
       if (f.tipo === 'ingreso') { if (fe >= hoy) it.push({ ing: true, nombre: f.nombre, fe, valor: f.valor }); continue; }
       // lo abonado a este vencimiento: pagos desde 20 días antes hasta 10 días después
       const ini = new Date(fe - 20 * 864e5), fin = new Date(+fe + 10 * 864e5);
-      const parcial = PF.filter(x => x.fijo === f.id).filter(x => { const d = new Date(x.fecha + 'T12:00:00'); return d >= ini && d < fin; }).reduce((a, x) => a + x.valor, 0);
+      const clave = isoD(fe);
+      const parcial = PF.filter(x => x.fijo === f.id).filter(x => { if (x.periodo) return x.periodo === clave; const d = new Date(x.fecha + 'T12:00:00'); return d >= ini && d < fin; }).reduce((a, x) => a + x.valor, 0);
       const pagado = parcial >= f.valor;
       if (fe < hoy && pagado) continue;
       it.push({ f, nombre: f.nombre, fe, valor: f.valor, pagado, parcial, casa: f.ambito === 'personal' });
@@ -197,14 +236,24 @@ function proximos() {
     <div class="stats s2"><div class="stat"><span>Por pagar</span><b class="neg">${fmt(porPagar)}</b></div><div class="stat"><span>Entra</span><b class="pos">${fmt(entra)}</b></div></div>
     <ul class="list" style="margin-top:8px">${it.map((x, i) => `<li><div class="d"><div>${x.ing ? '📥' : x.casa ? '🏠' : x.p ? '👥' : '🏪'} <b>${esc(x.nombre)}</b></div>
       <div class="muted">${cuando(x.fe)}${x.parcial && !x.pagado ? ' · abonado ' + fmt(x.parcial) : ''}</div></div>
-      <b class="${x.ing ? 'pos' : ''}">${fmt(x.valor)}</b>${x.ing ? '<span class="tag venta">entra</span>' : x.pagado ? '<span class="tag venta">✓ pagado</span>' : `<button class="btn sec" data-prox="${i}">Pagar</button>`}</li>`).join('')}</ul>
-    <p class="muted" style="margin-top:6px">Sale de los días de pago que pusiste en ⚙️ Configurar. Al tocar "Pagar" queda registrado y se marca ✓.</p></div>`;
+      <b class="${x.ing ? 'pos' : ''}">${fmt(x.valor)}</b>${x.ing ? '<span class="tag venta">entra</span>' : x.pagado ? '<span class="tag venta">✓ pagado</span>' : `<span class="fz-2b"><button class="btn sec" data-prox="${i}">Pagar</button><button class="lnk" data-ya="${i}" title="Ya estaba pagado: solo marcarlo">✓ Ya</button></span>`}</li>`).join('')}</ul>
+    <p class="muted" style="margin-top:6px">Sale de los días de pago que pusiste en ⚙️ Configurar. Al tocar "Pagar" queda registrado y se marca ✓. Si ya lo habías pagado antes, toca "✓ Ya" para marcarlo sin mover plata.</p></div>`;
 }
 function enganchaProximos(b) {
+  b.querySelectorAll('[data-ya]').forEach(x => x.onclick = async () => {
+    const it = window.__fzProx[Number(x.dataset.ya)], falta = it.valor - (it.parcial || 0);
+    if (!confirm(`¿Marcar "${it.nombre}" como ya pagado (${C().fmt(falta)})? No mueve ninguna cuenta ni la caja.`)) return;
+    try {
+      const r = await C().rpc('fz_registrar', { p_token: C().S.token, p_ambito: it.p ? 'local' : it.f.ambito, p_tipo: it.p ? 'nomina' : 'gasto', p_categoria: it.p ? 'Sueldo' : it.f.nombre,
+        p_valor: falta, p_persona: it.p ? it.p.id : null, p_fijo: it.p ? null : it.f.id, p_cuenta: null, p_en_caja: null, p_nota: 'Ya estaba pagado', p_fecha: null });
+      if (!it.p && r && r.id) await C().rpc('fz_mov_periodo', { p_token: C().S.token, p_id: r.id, p_periodo: isoD(it.fe) }).catch(() => null);
+      C().toast('Marcado ✓'); await recargar();
+    } catch (e) { C().toast(e.message, true); }
+  });
   b.querySelectorAll('[data-prox]').forEach(x => x.onclick = () => {
     const it = window.__fzProx[Number(x.dataset.prox)], falta = it.valor - (it.parcial || 0);
     if (it.p) registrar({ ambito: 'local', tipo: 'nomina', titulo: 'Sueldo · ' + it.p.nombre, valor: falta, persona: it.p.id, categoria: 'Sueldo' });
-    else registrar({ ambito: it.f.ambito, tipo: 'gasto', titulo: 'Pagar ' + it.f.nombre, valor: falta, fijo: it.f.id, categoria: it.f.nombre, soloCuentas: it.casa });
+    else registrar({ ambito: it.f.ambito, tipo: 'gasto', titulo: 'Pagar ' + it.f.nombre, valor: falta, fijo: it.f.id, categoria: it.f.nombre, soloCuentas: it.casa, periodo: isoD(it.fe) });
   });
 }
 
@@ -262,7 +311,7 @@ function vYo(b) {
   const porCat = {}; gastos.forEach(m => porCat[m.categoria || 'Otro'] = (porCat[m.categoria || 'Otro'] || 0) + m.valor);
   const total = F.cuentas.reduce((a, c) => a + Number(c.saldo), 0);
   b.innerHTML = `<div class="card"><div class="row"><h2 class="grow">🏦 Cuentas de la casa</h2><b>${fmt(total)}</b></div>
-      <ul class="list">${F.cuentas.map(c => `<li><div class="d"><div>${{ banco: '🏦', billetera: '📱', inversion: '📈', efectivo: '💵' }[c.tipo] || ''} ${esc(c.nombre)}</div><div class="muted">actualizado ${esc(c.actualizado)}</div></div><b>${fmt(c.saldo)}</b><button class="btn sec" data-cta="${c.id}">Ajustar</button></li>`).join('')}</ul>
+      <ul class="list">${F.cuentas.map(filaCuenta).join('')}</ul>
       <p class="muted" style="margin-top:6px">Los saldos bajan y suben solos cuando registras gastos o ingresos con esa cuenta. Si no cuadran con tu app del banco, toca "Ajustar". Si la plata de Laura paga algo del local, regístralo en 🏪 Local escogiendo "Plata de Laura" como origen.</p></div>
     <div class="card"><h2>🧭 ¿Cuánto necesita la casa del local?</h2>
       <table class="t"><tr><td>Gastos fijos de la casa al mes</td><td class="n">${fmt(tGas)}</td></tr><tr><td>− Otros ingresos (Laura, acuerdo, honorarios)</td><td class="n">${fmt(tIng)}</td></tr>
@@ -292,6 +341,9 @@ function vConfig(b) {
     ${grupo('💰 Otros ingresos de la casa (Laura, acuerdo, honorarios)', F.fijos.filter(f => f.ambito === 'personal' && f.tipo === 'ingreso'), { ambito: 'personal', tipo: 'ingreso' })}
     <div class="card"><div class="row"><h2 class="grow">👥 Personas en nómina</h2><button class="btn sec" id="nP">＋ Agregar</button></div>
       <ul class="list">${F.personas.map(p => `<li><div class="d"><div>${esc(p.nombre)}</div><div class="muted">${p.valor ? fmt(p.valor) + ' ' + ESQ[p.esquema] : 'sin sueldo'}</div></div><button class="btn sec" data-per="${p.id}">Editar</button></li>`).join('')}</ul></div>
+    <div class="card"><div class="row"><h2 class="grow">📈 Acciones y fondos</h2><button class="btn sec" id="nPos">＋ Agregar</button></div>
+      <p class="muted">Lo que tienes en Trii, ARQ, etc. El valor se calcula con el precio en línea.</p>
+      <ul class="list">${((F.port && F.port.posiciones) || []).map(p => `<li><div class="d"><div>${esc(p.nombre)} <span class="muted">${esc(p.simbolo || '')}</span></div><div class="muted">${esc((F.cuentas.find(c => c.id === p.cuenta_id) || {}).nombre || '')} · ${Number(p.cantidad).toLocaleString('es-CO', { maximumFractionDigits: 4 })} a ${p.moneda === 'USD' ? 'US$' + p.costo_prom : fmt(p.costo_prom)}</div></div><button class="btn sec" data-pos="${p.id}">Editar</button></li>`).join('') || '<li class="muted">Nada todavía.</li>'}</ul></div>
     <div class="card"><div class="row"><h2 class="grow">🏦 Cuentas de la casa</h2><button class="btn sec" id="nC">＋ Agregar</button></div>
       <ul class="list">${F.cuentas.map(c => `<li><div class="d"><div>${esc(c.nombre)}</div></div><b>${fmt(c.saldo)}</b><button class="btn sec" data-cta="${c.id}">Editar</button></li>`).join('')}</ul></div>`;
   C().moneyInput(b.querySelector('#sIv'));
@@ -305,6 +357,8 @@ function vConfig(b) {
   b.querySelectorAll('[data-cta]').forEach(x => x.onclick = () => editar('cuenta', F.cuentas.find(f => f.id == x.dataset.cta)));
   b.querySelector('#nP').onclick = () => editar('persona', { nombre: '', esquema: 'mensual', valor: 0 });
   b.querySelector('#nC').onclick = () => editar('cuenta', { nombre: '', tipo: 'banco', saldo: 0 });
+  b.querySelector('#nPos').onclick = () => editarPos({ nombre: '', simbolo: '', cantidad: 0, costo_prom: 0, moneda: 'COP', cuenta_id: (F.cuentas.find(c => c.tipo === 'inversion') || F.cuentas[0] || {}).id });
+  b.querySelectorAll('[data-pos]').forEach(x => x.onclick = () => editarPos(F.port.posiciones.find(p => p.id == x.dataset.pos)));
 }
 
 /* ---------- ventanas ---------- */
@@ -340,9 +394,10 @@ function registrar(o) {
       let cuenta = org.startsWith('a:') ? Number(org.slice(2)) : null;
       if (o.tipo === 'sueldo') cuenta = null; // el sueldo sale del local; la cuenta de destino se maneja aparte
       try {
-        await rpc('fz_registrar', { p_token: S.token, p_ambito: o.ambito, p_tipo: o.tipo, p_categoria: o.cats ? box.querySelector('#rc').value : (o.categoria || ''),
+        const rr = await rpc('fz_registrar', { p_token: S.token, p_ambito: o.ambito, p_tipo: o.tipo, p_categoria: o.cats ? box.querySelector('#rc').value : (o.categoria || ''),
           p_valor: v, p_persona: o.persona || null, p_fijo: o.fijo || null, p_cuenta: o.tipo === 'sueldo' ? (rd && rd.value ? Number(rd.value) : null) : cuenta,
           p_en_caja: org.startsWith('c:') ? org.slice(2) : null, p_nota: box.querySelector('#rn').value, p_fecha: box.querySelector('#rf').value || null });
+        if (o.periodo && rr && rr.id) await rpc('fz_mov_periodo', { p_token: S.token, p_id: rr.id, p_periodo: o.periodo }).catch(() => null);
         close(); toast('Guardado ✓'); await recargar();
       } catch (err) { btn.disabled = false; toast(err.message, true); }
     };
@@ -373,6 +428,30 @@ function editar(que, x) {
     };
     box.querySelector('#eOk').onclick = () => guardar(true);
     const del = box.querySelector('#eDel'); if (del) del.onclick = () => { if (confirm('¿Quitar "' + x.nombre + '"? Los pagos ya registrados no se borran.')) guardar(false); };
+  });
+}
+
+function editarPos(x) {
+  const { modal, esc, rpc, S, toast } = C();
+  const num = v => Number(String(v || '').replace(/\./g, '').replace(',', '.')) || 0;
+  const cuentas = F.cuentas.filter(c => c.tipo === 'inversion' || c.id === x.cuenta_id);
+  modal(`<h2>${x.id ? 'Editar' : 'Agregar'} acción o fondo</h2>
+    <label class="lbl">¿En qué cuenta está?</label><select class="inp" id="pc">${cuentas.map(c => `<option value="${c.id}" ${c.id === x.cuenta_id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select>
+    <label class="lbl">Nombre</label><input class="inp" id="pn" value="${esc(x.nombre)}" maxlength="60" placeholder="Ej: Ecopetrol">
+    <label class="lbl">Símbolo (para el precio en línea)</label><input class="inp" id="ps" value="${esc(x.simbolo || '')}" placeholder="Ej: ECOPETROL.CL, ISA.CL, GEB.CL, QQQ">
+    <p class="muted">Acciones de Colombia terminan en <b>.CL</b> (ECOPETROL.CL, PROMIGAS.CL, MINEROS.CL, ISA.CL, GEB.CL). En dólares: QQQ, VOO, AAPL… Déjalo vacío si no tiene precio en línea.</p>
+    <label class="lbl">Moneda</label><select class="inp" id="pm"><option value="COP" ${x.moneda === 'COP' ? 'selected' : ''}>Pesos (COP)</option><option value="USD" ${x.moneda === 'USD' ? 'selected' : ''}>Dólares (USD)</option></select>
+    <label class="lbl">Cantidad (acciones o unidades)</label><input class="inp" id="pq" inputmode="decimal" value="${x.cantidad ? String(x.cantidad).replace('.', ',') : ''}" placeholder="Ej: 100">
+    <label class="lbl">Precio promedio al que compraste (por acción)</label><input class="inp" id="pp" inputmode="decimal" value="${x.costo_prom ? String(x.costo_prom).replace('.', ',') : ''}" placeholder="Ej: 2638">
+    <label class="lbl">¿Cuánto pagaste en total en pesos? (opcional)</label><input class="inp" id="pt" inputmode="numeric" value="${x.costo_cop || ''}" placeholder="Solo si fue en dólares: lo que te costó en pesos">
+    <div class="row" style="margin-top:12px;gap:8px">${x.id ? '<button class="btn bad" id="pDel">Quitar</button>' : ''}<button class="btn sec grow" data-close>Cancelar</button><button class="btn grow" id="pOk">Guardar</button></div>`, (box, close) => {
+    const g = async (activo) => {
+      const d = { id: x.id || null, activo, cuenta_id: Number(box.querySelector('#pc').value), nombre: box.querySelector('#pn').value, simbolo: box.querySelector('#ps').value,
+        moneda: box.querySelector('#pm').value, cantidad: num(box.querySelector('#pq').value), costo_prom: num(box.querySelector('#pp').value), costo_cop: Math.round(num(box.querySelector('#pt').value)) };
+      try { await rpc('fz_posicion_guardar', { p_token: S.token, p_datos: d }); await rpc('fz_portafolio', { p_token: S.token, p_forzar: true }).catch(() => null); close(); toast('Guardado ✓'); await recargar(); } catch (e) { toast(e.message, true); }
+    };
+    box.querySelector('#pOk').onclick = () => g(true);
+    const del = box.querySelector('#pDel'); if (del) del.onclick = () => { if (confirm('¿Quitar "' + x.nombre + '"?')) g(false); };
   });
 }
 
