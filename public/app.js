@@ -84,17 +84,44 @@ function moneyInput(el) {
 const S = { token: null, yo: null, est: null, tab: 'hoy', f: null, rep: { per: 'hoy' }, hist: {} };
 const nuevoForm = (tipo = 'venta') => ({ tipo, cat: '', monto: 0, medio: 'Efectivo', nota: '', rec: 'Nequi', ent: 'Efectivo', uid: uid() });
 
-function salir(silencioso) {
+async function salir(silencioso) {
   clearInterval(S.poll); S.ev = null; S.act = []; S.enLinea = []; S.enLineaOk = false;
   if (S.token && !silencioso) rpc('cj_salir', { p_token: S.token }).catch(() => {});
+  const quien = S.yo && S.yo.nombre;
   S.token = null; S.yo = null; S.est = null;
   store.del('caja_s');
+  if (!silencioso) await ola('¡Hasta luego' + (quien ? ', ' + quien : '') + '!', '👋');
   pantallaLogin();
+}
+
+/* ---------- agua: olas en el login y la marea al entrar/salir ---------- */
+const OLA_SVG = (c, o) => `<svg viewBox="0 0 1200 60" preserveAspectRatio="none"><path fill="${c}" fill-opacity="${o}" d="M0 30 C100 8 200 8 300 30 S500 52 600 30 S800 8 900 30 S1100 52 1200 30 V60 H0Z"/></svg>`;
+function agua(si) {
+  let a = document.getElementById('agua');
+  if (!si) { if (a) a.remove(); document.body.classList.remove('en-login'); return; }
+  document.body.classList.add('en-login');
+  if (a) return;
+  a = document.createElement('div'); a.id = 'agua'; a.setAttribute('aria-hidden', 'true');
+  a.innerHTML = `<div class="ola o3">${OLA_SVG('#0d7c86', .35)}${OLA_SVG('#0d7c86', .35)}</div><div class="ola o2">${OLA_SVG('#0d7c86', .6)}${OLA_SVG('#0d7c86', .6)}</div><div class="ola o1">${OLA_SVG('#0a6a73', 1)}${OLA_SVG('#0a6a73', 1)}</div><div class="burbujas">${Array.from({ length: 9 }, (_, i) => `<i style="left:${8 + i * 10.5}%;animation-delay:${(i * 0.83) % 5}s;animation-duration:${5 + (i % 4)}s"></i>`).join('')}</div>`;
+  document.body.appendChild(a);
+}
+// la marea sube, muestra un saludo y baja
+function ola(texto, emoji) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve();
+  return new Promise(ok => {
+    const m = document.createElement('div'); m.className = 'marea';
+    m.innerHTML = `<div class="marea-agua"><div class="ola o1">${OLA_SVG('#0a6a73', 1)}${OLA_SVG('#0a6a73', 1)}</div></div><div class="marea-txt"><span>${emoji || '🌊'}</span>${esc(texto)}</div>`;
+    document.body.appendChild(m);
+    requestAnimationFrame(() => m.classList.add('sube'));
+    setTimeout(() => { ok(); m.classList.add('baja'); }, 1150);
+    setTimeout(() => m.remove(), 2000);
+  });
 }
 
 /* ============ LOGIN ============ */
 async function pantallaLogin() {
   clearInterval(S.poll);
+  agua(true);
   app.innerHTML = `<div class="login"><h1>${marca('Caja')}</h1><p>¿Quién eres?</p><div class="users" id="us"><p class="muted">Cargando…</p></div></div>`;
   let us = [];
   try { us = await rpc('cj_usuarios_login'); } catch (e) {
@@ -126,6 +153,8 @@ function pedirPin(id, nombre) {
       const r = await rpc('cj_login', { p_usuario: id, p_pin: pin });
       S.token = r.token; S.yo = r; store.set('caja_s', { token: r.token });
       S.tab = 'hoy'; S.f = nuevoForm();
+      await ola('¡Hola, ' + nombre + '!', '☀️');
+      agua(false);
       await principal();
     } catch (e) { err.textContent = e.message; err.classList.remove('hide'); pin = ''; pinta(); }
     enviando = false;
@@ -149,6 +178,7 @@ function pedirPin(id, nombre) {
 const esAdmin = () => S.est && S.est.yo.rol === 'admin';
 
 async function principal() {
+  agua(false);
   try { S.est = await rpc('cj_estado', { p_token: S.token }); } catch (e) {
     if (!S.token) return; // la sesión venció: ya se mostró el login
     app.innerHTML = `<div class="login"><h1>${marca('Caja')}</h1><div class="note bad">${esc(e.message)}</div><button class="btn full" onclick="location.reload()">Reintentar</button></div>`;
