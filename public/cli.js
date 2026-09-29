@@ -13,6 +13,12 @@ const TIPOS_ID = ['C.C.', 'C.E.', 'PPT', 'T.I.'];
 const CIVIL = ['Soltero(a)', 'Casado(a)', 'Unión libre', 'Separado(a)', 'Divorciado(a)', 'Viudo(a)'];
 const SEXO = [['m', 'Hombre'], ['f', 'Mujer']];
 const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const anio = s => { const m = String(s || '').match(/(19|20)\d\d/); return m ? m[0] : ''; };
+const RANGO = [[/primaria|b[aá]sica/i, 1], [/secundaria|bachiller|media/i, 2], [/t[eé]cnico|t[eé]cnica/i, 3], [/tecn[oó]log/i, 4], [/universit|profesional|pregrado/i, 5], [/especiali|maestr|posgrado/i, 6], [/curso|diplomado|seminario|taller/i, 7]];
+const rango = e => { const r = RANGO.find(([re]) => re.test(e.nivel || '')); return r ? r[1] : 8; };
+const clave = s => { const m = String(s || '').match(/^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/); return m ? `${m[1]}-${m[2] || '00'}-${m[3] || '00'}` : '9999'; };
+const ordenarEstudios = l => l.map((e, i) => [e, i]).sort((a, b) => rango(a[0]) - rango(b[0]) || clave(a[0].actual ? '9998' : a[0].fin).localeCompare(clave(b[0].actual ? '9998' : b[0].fin)) || a[1] - b[1]).map(x => x[0]);
+const ordenarFechas = (l, k) => l.map((e, i) => [e, i]).sort((a, b) => clave(a[0][k]).localeCompare(clave(b[0][k])) || a[1] - b[1]).map(x => x[0]);
 const fcorta = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${+m[3]} ${MES[+m[2] - 1]} ${m[1]}` : ''; };
 
 /* ---------- campos ---------- */
@@ -103,13 +109,13 @@ async function guardarCli() {
 async function cargarLista() { lista = await C().rpc('cj_clientes_buscar', { p_token: C().S.token, p_q: q }); }
 async function verLista() {
   const { esc, toast } = C();
-  mainEl.innerHTML = `<div class="card"><div class="row"><h2 class="grow" style="margin:0">👥 Clientes</h2><button class="btn" id="nuevoCli">＋ Nuevo</button></div>
+  mainEl.innerHTML = `<div class="card"><div class="row"><h2 class="grow" style="margin:0">👥 Clientes</h2><button class="btn sec chico" id="docRapido" title="Renuncia, referencia… para alguien sin registrar">📑 Documento rápido</button><button class="btn chico" id="nuevoCli">＋ Nuevo</button></div>
       <input class="inp" id="bCli" type="search" placeholder="🔎 Buscar por nombre, cédula o celular" value="${esc(q)}" style="margin-top:12px"></div>
     <div id="lCli" class="cli-lista"><p class="muted" style="padding:14px">Cargando…</p></div>`;
   const pinta = () => {
     const box = mainEl.querySelector('#lCli');
     box.innerHTML = lista.length ? lista.map(c => `<div class="card cli-row"><div class="cli-row-d" data-open="${c.id}"><b>${esc(c.nombre)}</b><span class="muted">${c.cedula ? 'C.C. ' + esc(c.cedula) : 'sin cédula'}${c.celular ? ' · ' + esc(c.celular) : ''}</span><span class="muted cli-quien">✍️ ${esc(c.actualizado_por || c.creado_por || '')} · ${esc(c.fecha)}</span></div>
-        <div class="cli-acc"><button class="btn sec" data-ed="${c.id}">✏️ Editar</button><button class="btn sec" data-hv="${c.id}">📄 Hoja de vida</button><button class="btn sec" data-doc="${c.id}">📑 Documentos</button></div></div>`).join('')
+        <div class="cli-acc"><button class="btn sec" data-hv="${c.id}">📄 Hoja de vida</button><button class="btn sec" data-doc="${c.id}">📑 Documentos</button><button class="btn sec" data-ed="${c.id}" title="Editar datos">✏️ Datos</button></div></div>`).join('')
       : `<div class="card"><p class="muted">${q ? 'No encontré a nadie con "' + esc(q) + '".' : 'Todavía no hay clientes. Toca "＋ Nuevo".'}</p></div>`;
     box.querySelectorAll('[data-open]').forEach(x => x.onclick = () => abrir(Number(x.dataset.open)));
     box.querySelectorAll('[data-ed]').forEach(x => x.onclick = () => abrir(Number(x.dataset.ed), 'editar'));
@@ -117,6 +123,7 @@ async function verLista() {
     box.querySelectorAll('[data-doc]').forEach(x => x.onclick = () => abrir(Number(x.dataset.doc), 'docs'));
   };
   mainEl.querySelector('#nuevoCli').onclick = () => { cli = { id: null, data: normalizar({}) }; asistentePersona(true); };
+  mainEl.querySelector('#docRapido').onclick = () => { cli = { id: null, data: normalizar({}), rapido: true }; ficha('docs'); arriba(); };
   let t;
   mainEl.querySelector('#bCli').oninput = e => { clearTimeout(t); t = setTimeout(async () => { q = e.target.value; try { await cargarLista(); pinta(); } catch (x) { toast(x.message, true); } }, 300); };
   try { await cargarLista(); pinta(); } catch (x) { mainEl.querySelector('#lCli').innerHTML = `<div class="note bad">${esc(x.message)}</div>`; }
@@ -126,7 +133,7 @@ async function abrir(id, ir) {
     const r = await C().rpc('cj_cliente_get', { p_token: C().S.token, p_id: id });
     cli = { id: r.id, data: normalizar(r.data), info: r };
     if (ir === 'editar') return asistentePersona(false);
-    ficha(ir); arriba();
+    ficha(ir || 'todo'); arriba();
   } catch (e) { C().toast(e.message, true); }
 }
 
@@ -134,33 +141,55 @@ async function abrir(id, ir) {
 function ficha(ir) {
   const { esc, S } = C();
   const d = cli.data, i = cli.info || {};
+  if (cli.rapido) return docsRapidos();
+  const modo = ir === 'hv' || ir === 'docs' ? ir : 'todo';
   const falta = [!V(d.num_id) && 'cédula', !V(d.celular) && 'celular', !V(d.fecha_nac) && 'fecha de nacimiento'].filter(Boolean);
-  mainEl.innerHTML = `<div class="card"><button class="lnk" id="volver" style="padding:0">← Clientes</button>
-      <div class="row" style="margin-top:8px;gap:12px;align-items:center">${d.foto ? `<img src="data:image/jpeg;base64,${d.foto}" class="cli-foto">` : '<div class="cli-foto cli-sinfoto">👤</div>'}
-        <div class="grow"><h2 style="margin:0">${esc(nombreDe(d) || 'Sin nombre')}</h2><p class="muted" style="margin:2px 0 0">${d.num_id ? esc(d.tipo_id || 'C.C.') + ' ' + esc(d.num_id) : 'sin cédula'}${d.celular ? ' · 📱 ' + esc(d.celular) : ''}</p></div>
-        <button class="btn sec" id="editar">✏️ Editar</button></div>
-      ${falta.length ? `<p class="note warn" style="margin-top:10px">Le falta: ${esc(falta.join(', '))}.</p>` : ''}
-      ${i.fecha ? `<p class="muted" style="margin-top:6px;font-size:.85rem">Actualizado ${esc(i.fecha)}${i.actualizado_por ? ' por ' + esc(i.actualizado_por) : ''}</p>` : ''}</div>
-    <div class="card" id="secHV"><div class="row"><h2 class="grow" style="margin:0">📄 Hojas de vida</h2><button class="btn sec" id="nuevaHV">＋ Otra</button></div>
-      ${d.hvs.length ? d.hvs.map((h, n) => `<div class="cli-hv"><div class="grow"><b>${esc(h.titulo || 'Hoja de vida ' + (n + 1))}</b><span class="muted">${(h.experiencias || []).length ? (h.experiencias || []).length + ' experiencia(s)' : 'sin experiencia'} · ${(h.estudios || []).length} estudio(s)</span></div>
-          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn" data-hvw="${h.id}">⬇️ Word</button><button class="btn sec" data-hvdup="${h.id}" title="Duplicar">⧉</button></div></div>`).join('')
-        : '<p class="muted" style="margin-top:8px">Todavía no tiene hoja de vida. Toca "＋ Otra" para crearla.</p>'}</div>
-    <div class="card" id="secDocs"><h2 style="margin:0">📑 Documentos</h2><p class="muted" style="margin-top:4px">Se abre con sus datos puestos para revisar y completar.</p>
-      <div class="cli-docs">${Object.entries(DOCS).map(([k, x]) => `<button class="cli-doc" data-doc="${k}"><span>${x.e}</span>${esc(x.t)}</button>`).join('')}</div></div>
-    ${S.yo && S.yo.rol === 'admin' ? '<p style="text-align:center;margin:10px 0 20px"><button class="lnk" id="quitar">Quitar este cliente de la lista</button></p>' : ''}`;
+  const cab = `<div class="card cli-cab"><button class="lnk" id="volver">← Clientes</button>
+      <div class="row cli-cab-d">${d.foto ? `<img src="data:image/jpeg;base64,${d.foto}" class="cli-foto">` : '<div class="cli-foto cli-sinfoto">👤</div>'}
+        <div class="grow"><b class="cli-nom">${esc(nombreDe(d) || 'Sin nombre')}</b><span class="muted">${d.num_id ? esc(d.tipo_id || 'C.C.') + ' ' + esc(d.num_id) : 'sin cédula'}${d.celular ? ' · 📱 ' + esc(d.celular) : ''}</span>
+        ${i.fecha ? `<span class="muted cli-quien">✍️ ${esc(i.actualizado_por || '')} · ${esc(i.fecha)}</span>` : ''}</div>
+        <button class="btn sec chico" id="editar">✏️ Datos</button></div>
+      ${falta.length ? `<p class="note warn cli-falta">Le falta: ${esc(falta.join(', '))}.</p>` : ''}
+      <div class="cli-tabs"><button data-modo="hv" class="${modo === 'hv' ? 'on' : ''}">📄 Hojas de vida</button><button data-modo="docs" class="${modo === 'docs' ? 'on' : ''}">📑 Documentos</button></div></div>`;
+  const secHV = `<div class="card" id="secHV"><div class="row"><h3 class="grow cli-h">📄 Hojas de vida</h3><button class="btn chico" id="nuevaHV">＋ Nueva</button></div>
+      ${d.hvs.length ? d.hvs.map((h, n) => `<div class="cli-hv"><div class="cli-hv-d"><b>${esc(h.titulo || 'Hoja de vida ' + (n + 1))}</b><span class="muted">${(h.estudios || []).length} estudio(s) · ${(h.experiencias || []).length ? (h.experiencias || []).length + ' experiencia(s)' : 'sin experiencia'}</span></div>
+          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}">⬇️ Word</button><button class="btn pdf" data-hvp="${h.id}">📕 PDF</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
+        : '<p class="muted" style="margin:8px 0 0">Todavía no tiene hoja de vida. Toca "＋ Nueva".</p>'}</div>`;
+  const secDocs = `<div class="card" id="secDocs"><h3 class="cli-h">📑 Documentos</h3><p class="muted cli-sub">Se abre con sus datos puestos para revisar y completar.</p>
+      <div class="cli-docs">${Object.entries(DOCS).map(([k, x]) => `<button class="cli-doc" data-doc="${k}"><span>${x.e}</span>${esc(x.t)}</button>`).join('')}</div></div>`;
+  mainEl.innerHTML = cab + (modo !== 'docs' ? secHV : '') + (modo !== 'hv' ? secDocs : '')
+    + (modo === 'todo' && S.yo && S.yo.rol === 'admin' ? '<p style="text-align:center;margin:10px 0 20px"><button class="lnk" id="quitar">Quitar este cliente de la lista</button></p>' : '');
   mainEl.querySelector('#volver').onclick = () => { cli = null; verLista(); };
   mainEl.querySelector('#editar').onclick = () => asistentePersona(false);
-  mainEl.querySelector('#nuevaHV').onclick = () => { const h = nuevaHV(d.hvs.length ? 'Hoja de vida ' + (d.hvs.length + 1) : 'Principal'); asistenteHV(h, true); };
+  mainEl.querySelectorAll('[data-modo]').forEach(b => b.onclick = () => ficha(b.dataset.modo === modo ? 'todo' : b.dataset.modo));
+  const nv = mainEl.querySelector('#nuevaHV');
+  if (nv) nv.onclick = () => { const h = nuevaHV(d.hvs.length ? 'Hoja de vida ' + (d.hvs.length + 1) : 'Principal'); asistenteHV(h, true); };
   mainEl.querySelectorAll('[data-hved]').forEach(b => b.onclick = () => asistenteHV(JSON.parse(JSON.stringify(d.hvs.find(h => h.id === b.dataset.hved))), false));
   mainEl.querySelectorAll('[data-hvw]').forEach(b => b.onclick = () => wordHV(d.hvs.find(h => h.id === b.dataset.hvw), b));
+  mainEl.querySelectorAll('[data-hvp]').forEach(b => b.onclick = () => wordHV(d.hvs.find(h => h.id === b.dataset.hvp), b, 'pdf'));
   mainEl.querySelectorAll('[data-hvdup]').forEach(b => b.onclick = async () => {
     const h = JSON.parse(JSON.stringify(d.hvs.find(x => x.id === b.dataset.hvdup))); h.id = uid(); h.titulo = (h.titulo || 'Hoja de vida') + ' (copia)';
-    d.hvs.push(h); try { await guardarCli(); C().toast('Copia creada: cámbiale el nombre en Editar'); ficha('hv'); } catch (e) { C().toast(e.message, true); }
+    d.hvs.push(h); try { await guardarCli(); C().toast('Copia creada ✓ Tócale ✏️ Editar para cambiarle el nombre'); ficha(modo); } catch (e) { C().toast(e.message, true); }
+  });
+  // quitar: sale de la lista pero queda guardada aparte (se puede recuperar si fue un error)
+  mainEl.querySelectorAll('[data-hvx]').forEach(b => b.onclick = async () => {
+    const h = d.hvs.find(x => x.id === b.dataset.hvx); if (!h || !confirm(`¿Quitar la hoja de vida "${h.titulo || 'sin nombre'}"?`)) return;
+    d.hvs = d.hvs.filter(x => x !== h); d.hvs_quitadas = (d.hvs_quitadas || []).concat([Object.assign({}, h, { quitada: new Date().toISOString() })]);
+    try { await guardarCli(); C().toast('Hoja de vida quitada ✓'); ficha(modo); } catch (e) { d.hvs.push(h); C().toast(e.message, true); }
   });
   mainEl.querySelectorAll('[data-doc]').forEach(b => b.onclick = () => asistenteDoc(b.dataset.doc));
   const qu = mainEl.querySelector('#quitar');
   if (qu) qu.onclick = async () => { if (!confirm('¿Quitar a ' + nombreDe(d) + ' de la lista?')) return; try { await C().rpc('cj_cliente_quitar', { p_token: C().S.token, p_id: cli.id }); cli = null; verLista(); } catch (e) { C().toast(e.message, true); } };
-  if (ir === 'hv' || ir === 'docs') { const s = mainEl.querySelector(ir === 'hv' ? '#secHV' : '#secDocs'); if (s) setTimeout(() => s.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60); }
+  cli.modo = modo;
+}
+// documento rápido: para alguien que no está registrado (no guarda nada)
+function docsRapidos() {
+  const { esc } = C();
+  mainEl.innerHTML = `<div class="card cli-cab"><button class="lnk" id="volver">← Clientes</button>
+      <h3 class="cli-h" style="margin-top:6px">📑 Documento rápido</h3><p class="muted cli-sub">Para una persona que no tiene hoja de vida aquí. Se llena, se revisa y se baja; no queda guardado.</p>
+      <div class="cli-docs">${Object.entries(DOCS).map(([k, x]) => `<button class="cli-doc" data-doc="${k}"><span>${x.e}</span>${esc(x.t)}</button>`).join('')}</div></div>`;
+  mainEl.querySelector('#volver').onclick = () => { cli = null; verLista(); };
+  mainEl.querySelectorAll('[data-doc]').forEach(b => b.onclick = () => asistenteDoc(b.dataset.doc));
 }
 
 /* ---------- asistente por pasos (genérico) ---------- */
@@ -257,7 +286,8 @@ function itemEst(e = {}) {
   return `<div class="cli-item"><div class="cli-seg cli-seg-s" data-niv>${NIVELES.map(([n]) => `<button type="button" data-v="${n}" class="${n === (e.nivel || 'Secundaria') ? 'on' : ''}">${n}</button>`).join('')}</div>
     <input class="inp" data-k="inst" placeholder="¿Dónde estudió? Ej: Colegio Camilo Torres" value="${esc(e.inst || '')}">
     <input class="inp" data-k="titulo" placeholder="Título. Ej: Bachiller académico" value="${esc(e.titulo || (NIVELES.find(x => x[0] === (e.nivel || 'Secundaria')) || [])[1] || '')}">
-    <input class="inp" data-k="ciudad" placeholder="Ciudad" value="${esc(e.ciudad || 'Barrancabermeja')}"><button type="button" class="lnk cli-del">✕ Quitar este estudio</button></div>`;
+    <div class="cli-2"><input class="inp" data-k="ciudad" placeholder="Ciudad" value="${esc(e.ciudad || 'Barrancabermeja')}"><input class="inp" data-k="fin" inputmode="numeric" maxlength="4" placeholder="Año que terminó" value="${esc(anio(e.fin))}"></div>
+    <div class="row cli-2b"><label class="cli-chk"><input type="checkbox" data-k="actual"${e.actual ? ' checked' : ''}><span>Estudia actualmente</span></label><button type="button" class="lnk cli-del">✕ Quitar</button></div></div>`;
 }
 function itemExp(e = {}) {
   const { esc } = C();
@@ -266,7 +296,7 @@ function itemExp(e = {}) {
     <div class="row" style="gap:8px"><label class="grow"><span class="muted" style="font-size:.85rem">Entró</span><input class="inp" type="date" data-k="ingreso" value="${esc(e.ingreso || '')}"></label>
     <label class="grow"><span class="muted" style="font-size:.85rem">Salió</span><input class="inp" type="date" data-k="fin" value="${esc(e.fin || '')}"></label></div>
     <label class="cli-chk"><input type="checkbox" data-k="actual"${e.actual ? ' checked' : ''}><span>Trabaja ahí todavía</span></label>
-    <input class="inp" data-k="ciudad" placeholder="Ciudad" value="${esc(e.ciudad || 'Barrancabermeja')}"><button type="button" class="lnk cli-del">✕ Quitar esta experiencia</button></div>`;
+    <div class="row cli-2b"><input class="inp grow" data-k="ciudad" placeholder="Ciudad" value="${esc(e.ciudad || 'Barrancabermeja')}"><button type="button" class="lnk cli-del">✕ Quitar</button></div></div>`;
 }
 function leerItems(box) { return [...box.querySelectorAll('.cli-item')].map(it => { const o = {}; const s = it.querySelector('[data-niv] .on'); if (s) o.nivel = s.dataset.v; it.querySelectorAll('[data-k]').forEach(x => o[x.dataset.k] = x.type === 'checkbox' ? x.checked : x.value.trim()); return o; }); }
 function montarItems(f, box, add, fn) {
@@ -291,15 +321,15 @@ function asistenteHV(h, nueva) {
   const pasos = [
     { t: 'Nombre de esta hoja de vida', e: '🏷️', ayuda: 'Si la persona tiene varias (una para petroleras, otra para comercio…), así las diferencias.',
       html: () => campo('titulo', { l: 'Nombre', ph: 'Ej: Principal, Petrolera, Comercio' }, h.titulo), leer: f => { h.titulo = V(f.elements.titulo.value) || 'Principal'; } },
-    { t: 'Estudios', e: '🎓', ayuda: 'Del más alto al más bajo. Toca el nivel y escribe dónde estudió.',
+    { t: 'Estudios', e: '🎓', ayuda: 'Toca el nivel y escribe dónde estudió. Se ordenan solos: primaria, secundaria, técnico… y los cursos al final, por año.',
       html: () => `<div id="lEst">${(h.estudios.length ? h.estudios : [{}]).map(itemEst).join('')}</div><button type="button" class="btn sec full" id="addEst">＋ Agregar otro estudio</button>`,
       montar: f => montarItems(f, f.querySelector('#lEst'), f.querySelector('#addEst'), () => itemEst()),
-      leer: f => { h.estudios = leerItems(f.querySelector('#lEst')).filter(e => e.inst || (e.titulo && e.titulo !== 'Bachiller académico' && e.titulo !== 'Básica primaria') || e.inst); } },
-    { t: 'Experiencia laboral', e: '💼', ayuda: 'De la más reciente a la más antigua. Si no tiene, déjalo vacío y escribe un perfil corto abajo.',
+      leer: f => { h.estudios = ordenarEstudios(leerItems(f.querySelector('#lEst')).filter(e => e.inst || (e.titulo && e.titulo !== 'Bachiller académico' && e.titulo !== 'Básica primaria'))); } },
+    { t: 'Experiencia laboral', e: '💼', ayuda: 'En cualquier orden: se acomodan solas por fecha, de la más antigua a la más reciente. Si no tiene, déjalo vacío y escribe un perfil corto abajo.',
       html: () => `<div id="lExp">${h.experiencias.map(itemExp).join('')}</div><button type="button" class="btn sec full" id="addExp">＋ Agregar experiencia</button>
         ${campo('sin_exp', { l: 'Si no tiene experiencia: perfil corto (opcional)', type: 'area', ph: 'Busco mi primera oportunidad laboral. Soy una persona responsable, puntual…' }, h.sin_exp)}`,
       montar: f => montarItems(f, f.querySelector('#lExp'), f.querySelector('#addExp'), () => itemExp()),
-      leer: f => { h.experiencias = leerItems(f.querySelector('#lExp')).filter(e => e.empresa); h.sin_exp = V(f.elements.sin_exp.value); } },
+      leer: f => { h.experiencias = ordenarFechas(leerItems(f.querySelector('#lExp')).filter(e => e.empresa), 'ingreso'); h.sin_exp = V(f.elements.sin_exp.value); } },
     { t: 'Referencias familiares', e: '👪', ayuda: 'Dos familiares que den buena cuenta de la persona.', html: () => refCampos('ref_fam', 'Familiar'), leer: f => leerRef(f, 'ref_fam') },
     { t: 'Referencias personales', e: '🤝', ayuda: 'Dos personas que no sean familia (amigos, vecinos, jefes).', html: () => refCampos('ref_per', 'Referencia'), leer: f => leerRef(f, 'ref_per') },
   ];
@@ -310,7 +340,7 @@ function asistenteHV(h, nueva) {
   };
   const resumen = () => `<div class="cli-res">
     <div class="cli-res-b"><div class="row"><b class="grow">🪪 ${esc(nombreDe(d))}</b></div><div class="cli-res-i"><span>Documento</span><b>${esc((d.tipo_id || 'C.C.') + ' ' + (d.num_id || '—'))}</b></div><div class="cli-res-i"><span>Celular</span><b>${esc(d.celular || '—')}</b></div></div>
-    <div class="cli-res-b"><div class="row"><b class="grow">🎓 Estudios</b><button type="button" class="lnk" data-edit="1">Cambiar</button></div>${h.estudios.map(e => `<div class="cli-res-i"><span>${esc(e.nivel || '')}</span><b>${esc([e.titulo, e.inst].filter(Boolean).join(' · '))}</b></div>`).join('') || '<p class="muted">Sin estudios</p>'}</div>
+    <div class="cli-res-b"><div class="row"><b class="grow">🎓 Estudios</b><button type="button" class="lnk" data-edit="1">Cambiar</button></div>${h.estudios.map(e => `<div class="cli-res-i"><span>${esc(e.nivel || '')}${e.actual ? ' · en curso' : anio(e.fin) ? ' · ' + anio(e.fin) : ''}</span><b>${esc([e.titulo, e.inst].filter(Boolean).join(' · '))}</b></div>`).join('') || '<p class="muted">Sin estudios</p>'}</div>
     <div class="cli-res-b"><div class="row"><b class="grow">💼 Experiencia</b><button type="button" class="lnk" data-edit="2">Cambiar</button></div>${h.experiencias.map(e => `<div class="cli-res-i"><span>${esc(fcorta(e.ingreso) || '')}${e.actual ? ' → hoy' : e.fin ? ' → ' + esc(fcorta(e.fin)) : ''}</span><b>${esc([e.cargo, e.empresa].filter(Boolean).join(' · '))}</b></div>`).join('') || `<p class="muted">Sin experiencia${h.sin_exp ? ' · con perfil' : ''}</p>`}</div>
     <div class="cli-res-b"><div class="row"><b class="grow">👪 Familiares</b><button type="button" class="lnk" data-edit="3">Cambiar</button></div>${h.ref_fam.filter(r => r.nombre).map(r => `<div class="cli-res-i"><span>${esc(r.prof || '')}</span><b>${esc(r.nombre)} · ${esc(r.cel || '')}</b></div>`).join('') || '<p class="muted">Sin referencias</p>'}</div>
     <div class="cli-res-b"><div class="row"><b class="grow">🤝 Personales</b><button type="button" class="lnk" data-edit="4">Cambiar</button></div>${h.ref_per.filter(r => r.nombre).map(r => `<div class="cli-res-i"><span>${esc(r.prof || '')}</span><b>${esc(r.nombre)} · ${esc(r.cel || '')}</b></div>`).join('') || '<p class="muted">Sin referencias</p>'}</div></div>`;
@@ -319,23 +349,25 @@ function asistenteHV(h, nueva) {
     montar: (f, ir) => f.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => ir(Number(b.dataset.edit))),
     acciones: [
       ['💾 Guardar', async () => { await guardarHV(); C().toast('Hoja de vida guardada ✓'); ficha('hv'); return false; }],
-      ['⬇️ Guardar y bajar Word', async () => { await guardarHV(); await wordHV(h); return '✅ Listo. Revisa tus descargas y ábrela en Word antes de imprimir.'; }, true],
+      ['⬇️ Word', async () => { await guardarHV(); await wordHV(h); return '✅ Guardada y descargada en Word.'; }, true],
+      ['📕 PDF', async () => { await guardarHV(); await wordHV(h, null, 'pdf'); return '✅ Guardada y descargada en PDF.'; }, true],
     ],
   }, () => { if (cli.id) ficha('hv'); else { cli = null; verLista(); } });
 }
-async function wordHV(h, btn) {
+async function wordHV(h, btn, formato) {
   const d = cli.data;
-  if (!V(d.nombres) || !V(d.apellidos) || !V(d.num_id)) { C().toast('Para la hoja de vida faltan nombres, apellidos o documento: toca ✏️ Editar', true); return; }
+  if (!V(d.nombres) || !V(d.apellidos) || !V(d.num_id)) { const m = 'Para bajarla faltan nombres, apellidos o cédula: toca ✏️ Datos'; if (!btn) throw new Error(m); C().toast(m, true); return; }
+  const txt = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
   try {
-    const body = { nombres: d.nombres, apellidos: d.apellidos, tipo_id: d.tipo_id, num_id: d.num_id, expedicion: d.expedicion, fecha_nac: d.fecha_nac, lugar_nac: d.lugar_nac, estado_civil: d.estado_civil,
+    const body = { formato: formato === 'pdf' ? 'pdf' : 'word', nombres: d.nombres, apellidos: d.apellidos, tipo_id: d.tipo_id, num_id: d.num_id, expedicion: d.expedicion, fecha_nac: d.fecha_nac, lugar_nac: d.lugar_nac, estado_civil: d.estado_civil,
       celular: d.celular, direccion: d.direccion, barrio: d.barrio, estudios: h.estudios, experiencias: h.experiencias, tiene_exp: (h.experiencias || []).length > 0, sin_exp: h.sin_exp,
       ref_fam: h.ref_fam, ref_per: h.ref_per, caja_token: C().S.token };
     if (d.foto) body.foto = d.foto;
-    await descargar(body, 'hoja-de-vida-' + archivo(nombreDe(d)) + (d.hvs.length > 1 ? '-' + archivo(h.titulo) : '') + '.docx');
+    await descargar(body, 'hoja-de-vida-' + archivo(nombreDe(d)) + (d.hvs.length > 1 ? '-' + archivo(h.titulo) : '') + (formato === 'pdf' ? '.pdf' : '.docx'));
     if (btn) C().toast('Hoja de vida descargada ✓');
-  } catch (e) { C().toast(e.message, true); }
-  if (btn) { btn.disabled = false; btn.textContent = '⬇️ Word'; }
+  } catch (e) { if (!btn) throw e; C().toast(e.message, true); }
+  if (btn) { btn.disabled = false; btn.textContent = txt; }
 }
 
 /* foto: recorta al centro en 3x4 y la baja a JPEG liviano */
@@ -395,11 +427,10 @@ function asistenteDoc(k) {
       const datos = {}; D.f.forEach(([n]) => { datos[n] = val[n] == null ? (def([n]).v ?? '') : val[n]; });
       const body = k === 'cobro' ? { tipo: 'cobro', datos, caja_token: C().S.token } : { tipo: 'doc', doc: k, datos, caja_token: C().S.token };
       await descargar(body, (k === 'cobro' ? 'cuenta-de-cobro' : k) + '-' + archivo(datos.nombre) + '.docx');
-      d.docs = Object.assign({}, d.docs || {}, { [k]: datos });
-      guardarCli().catch(() => {});
+      if (cli.id) { d.docs = Object.assign({}, d.docs || {}, { [k]: datos }); guardarCli().catch(() => {}); }
       return '✅ Listo. Revisa tus descargas y ábrelo en Word antes de imprimir.';
     }, true]],
-  }, () => ficha('docs'));
+  }, () => ficha(cli.rapido ? 'docs' : (cli.modo || 'docs')));
 }
 
 /* ---------- genera en el servidor y descarga ---------- */
