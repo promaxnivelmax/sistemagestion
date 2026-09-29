@@ -109,13 +109,14 @@ async function guardarCli() {
 async function cargarLista() { lista = await C().rpc('cj_clientes_buscar', { p_token: C().S.token, p_q: q }); }
 async function verLista() {
   const { esc, toast } = C();
-  mainEl.innerHTML = `<div class="card"><div class="row"><h2 class="grow" style="margin:0">👥 Clientes</h2><button class="btn sec chico" id="docRapido" title="Renuncia, referencia… para alguien sin registrar">📑 Documento rápido</button><button class="btn chico" id="nuevoCli">＋ Nuevo</button></div>
+  mainEl.innerHTML = `<div class="card"><div class="row" style="flex-wrap:nowrap"><h2 class="grow" style="margin:0;white-space:nowrap">👥 Clientes</h2><button class="btn sec chico" id="docRapido" title="Renuncia, referencia… para alguien sin registrar" style="white-space:nowrap">📑 Doc. rápido</button><button class="btn chico" id="nuevoCli" style="white-space:nowrap">＋ Nuevo</button></div>
       <input class="inp" id="bCli" type="search" placeholder="🔎 Buscar por nombre, cédula o celular" value="${esc(q)}" style="margin-top:12px"></div>
     <div id="lCli" class="cli-lista"><p class="muted" style="padding:14px">Cargando…</p></div>`;
   const pinta = () => {
     const box = mainEl.querySelector('#lCli');
-    box.innerHTML = lista.length ? lista.map(c => `<div class="card cli-row"><div class="cli-row-d" data-open="${c.id}"><b>${esc(c.nombre)}</b><span class="muted">${c.cedula ? 'C.C. ' + esc(c.cedula) : 'sin cédula'}${c.celular ? ' · ' + esc(c.celular) : ''}</span><span class="muted cli-quien">✍️ ${esc(c.actualizado_por || c.creado_por || '')} · ${esc(c.fecha)}</span></div>
-        <div class="cli-acc"><button class="btn sec" data-hv="${c.id}">📄 Hoja de vida</button><button class="btn sec" data-doc="${c.id}">📑 Documentos</button><button class="btn sec" data-ed="${c.id}" title="Editar datos">✏️ Datos</button></div></div>`).join('')
+    box.innerHTML = lista.length ? `<div class="card cli-tabla">${lista.map(c => `<div class="cli-fila"><div class="cli-fila-d" data-open="${c.id}"><b>${esc(c.nombre)}</b><span>${c.cedula ? esc(c.cedula) : 'sin cédula'}${c.celular ? ' · ' + esc(c.celular) : ''}<i> · ✍️ ${esc(c.actualizado_por || c.creado_por || '')} ${esc(c.fecha)}</i></span></div>
+        <div class="cli-ic"><button data-hv="${c.id}" title="Hoja de vida">📄</button><button data-doc="${c.id}" title="Documentos">📑</button><button data-ed="${c.id}" title="Editar datos">✏️</button></div></div>`).join('')}
+        ${lista.length >= 60 ? '<p class="muted cli-mas">Se ven los 60 más recientes. Escribe en el buscador para encontrar a los demás.</p>' : ''}</div>`
       : `<div class="card"><p class="muted">${q ? 'No encontré a nadie con "' + esc(q) + '".' : 'Todavía no hay clientes. Toca "＋ Nuevo".'}</p></div>`;
     box.querySelectorAll('[data-open]').forEach(x => x.onclick = () => abrir(Number(x.dataset.open)));
     box.querySelectorAll('[data-ed]').forEach(x => x.onclick = () => abrir(Number(x.dataset.ed), 'editar'));
