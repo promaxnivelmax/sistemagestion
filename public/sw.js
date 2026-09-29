@@ -1,6 +1,6 @@
 // Caja La 52: guarda la página y sus archivos para abrir al instante. Los datos (ventas, clientes) siempre van a internet.
-const V = 'caja-v16';
-const BASE = ['/', '/index.html', '/styles.css?v=16', '/app.js?v=12', '/cli.js?v=5', '/fz.js?v=7', '/favicon.svg'];
+const V = 'caja-v18';
+const BASE = ['/', '/index.html', '/styles.css?v=18', '/app.js?v=12', '/cli.js?v=7', '/hvd.js?v=2', '/tram.js?v=1', '/fz.js?v=7', '/favicon.svg'];
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(V).then(c => c.addAll(BASE)).catch(() => {})); });
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {
