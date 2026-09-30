@@ -81,7 +81,7 @@ const DOCS = {
 let mainEl = null, lista = [], q = '', cli = null; // cli = { id, data, info }
 
 async function CLI(main) {
-  mainEl = main;
+  mainEl = main; if (!main.__mayus) { enMayus(main); main.__mayus = 1; }
   main.classList.remove('hoy', 'adm');
   if (cli && cli.id) return ficha();
   await verLista();
@@ -90,8 +90,24 @@ window.CLI = CLI;
 const arriba = () => { try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); } };
 
 /* ---------- datos: una persona con varias hojas de vida ---------- */
+/* todo en MAYÚSCULAS menos correos, fechas, fotos y opciones internas */
+const NO_MAYUS = new Set(['correo', 'email', 'foto', 'id', 'emp', 'k', 'fecha', 'fecha_nac', 'fin', 'ingreso', 'retiro', 'inicio', 'genero', 'tipo_id', 'estado_civil', 'fpago', 'tcuenta', 'nivel', 'sig', 'por', 'quitada', 'url']);
+function mayus(o, k) {
+  if (Array.isArray(o)) return o.map(x => mayus(x, k));
+  if (o && typeof o === 'object') { const r = {}; for (const [kk, v] of Object.entries(o)) r[kk] = mayus(v, kk); return r; }
+  if (typeof o !== 'string' || NO_MAYUS.has(k) || /@|^data:|^https?:|^\d{4}-\d{2}-\d{2}/.test(o)) return o;
+  return o.toLocaleUpperCase('es-CO');
+}
+function enMayus(root) {
+  root.addEventListener('input', e => {
+    const x = e.target; if (!x || !(x.tagName === 'TEXTAREA' || (x.tagName === 'INPUT' && /^(text|search|tel|)$/.test(x.type)))) return;
+    if (/correo|email/i.test((x.name || '') + (x.dataset.k || '')) || x.id === 'bTram' || x.id === 'bCli') return;
+    const u = x.value.toLocaleUpperCase('es-CO'); if (u === x.value) return;
+    const a = x.selectionStart, b = x.selectionEnd; x.value = u; try { x.setSelectionRange(a, b); } catch (er) {}
+  });
+}
 function normalizar(d) {
-  d = Object.assign({}, d || {});
+  d = mayus(Object.assign({}, d || {}));
   if (!Array.isArray(d.hvs)) {
     const tiene = (d.estudios || []).length || (d.experiencias || []).length || (d.ref_per || []).some(r => r && V(r.nombre));
     d.hvs = tiene ? [{ id: uid(), titulo: 'Principal', estudios: d.estudios || [], experiencias: d.experiencias || [], sin_exp: d.sin_exp || '', ref_fam: d.ref_fam || [{}, {}], ref_per: d.ref_per || [{}, {}] }] : [];
@@ -115,6 +131,7 @@ async function guardarCli() {
       }
     } catch (e) {}
   }
+  cli.data = mayus(cli.data);
   const r = await C().rpc('cj_cliente_guardar', { p_token: C().S.token, p_id: cli.id, p_data: cli.data });
   cli.id = r.id;
 }
@@ -168,10 +185,10 @@ function ficha(ir) {
         ${i.fecha ? `<span class="muted cli-quien">✍️ ${esc(i.actualizado_por || '')} · ${esc(i.fecha)}</span>` : ''}</div>
         <button class="btn sec chico" id="editar">✏️ Datos</button></div>
       ${falta.length ? `<p class="note warn cli-falta">Le falta: ${esc(falta.join(', '))}.</p>` : ''}
-      <div class="cli-tabs"><button data-modo="hv" class="${modo === 'hv' ? 'on' : ''}">📄 HV</button><button data-modo="docs" class="${modo === 'docs' ? 'on' : ''}">📑 Documentos</button><button data-modo="cobros" class="${modo === 'cobros' ? 'on' : ''}">🧾 Cobros</button><button data-modo="tram" class="${modo === 'tram' ? 'on' : ''}">🔗 Trámites</button></div></div>`;
+      <div class="cli-tabs"><button data-modo="hv" class="${modo === 'hv' ? 'on' : ''}"><i class="ti">📄 </i>HV</button><button data-modo="docs" class="${modo === 'docs' ? 'on' : ''}"><i class="ti">📑 </i>Documentos</button><button data-modo="cobros" class="${modo === 'cobros' ? 'on' : ''}"><i class="ti">🧾 </i>Cobros</button><button data-modo="tram" class="${modo === 'tram' ? 'on' : ''}"><i class="ti">🔗 </i>Trámites</button></div></div>`;
   const secHV = `<div class="card" id="secHV"><div class="row"><h3 class="grow cli-h">📄 Hojas de vida</h3><button class="btn chico" id="nuevaHV">＋ Nueva</button></div>
       ${d.hvs.length ? d.hvs.map((h, n) => `<div class="cli-hv"><div class="cli-hv-d"><b>${esc(h.titulo || 'Hoja de vida ' + (n + 1))}</b><span class="muted">${(h.estudios || []).length} estudio(s) · ${(h.experiencias || []).length ? (h.experiencias || []).length + ' experiencia(s)' : 'sin experiencia'}</span></div>
-          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}" title="La hoja de vida de siempre">⬇️ Word</button><button class="btn sec" data-hvd="ats:${h.id}" title="Diseño sencillo que leen los sistemas de las empresas">ATS</button><button class="btn sec" data-hvd="moderna:${h.id}" title="Diseño moderno a color">🎨 Moderna</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
+          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}" title="La hoja de vida de siempre">⬇️ Word</button><button class="btn sec" data-hvd="ats:${h.id}" title="Diseño sencillo que leen los sistemas de las empresas">ATS</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
         : '<p class="muted" style="margin:8px 0 0">Todavía no tiene hoja de vida. Toca "＋ Nueva".</p>'}</div>`;
   const secDocs = `<div class="card" id="secDocs"><h3 class="cli-h">📑 Documentos</h3><p class="muted cli-sub">Se abre con sus datos puestos para revisar y completar.</p>
       <div class="cli-docs">${Object.entries(DOCS).map(([k, x]) => `<button class="cli-doc" data-doc="${k}"><span>${x.e}</span>${esc(x.t)}</button>`).join('')}</div></div>`;
@@ -230,8 +247,15 @@ function secTramites(d) {
   const { esc } = C();
   const datos = datosCopiables(d);
   return `<div class="card cli-tram">${datos.length ? `<p class="cli-l">Toca un dato para copiarlo (luego Ctrl+V en la página):</p><div class="cli-copia">${datos.map(([l, v]) => `<button data-copia="${esc(v)}"><i>${esc(l)}</i>${esc(v)}</button>`).join('')}</div>` : ''}
-    <input class="inp" id="bTram" type="search" placeholder="🔎 Buscar trámite (policía, contraloría, RUNT…)" style="margin-top:8px">
-    <div id="lTram">${(window.TRAMITES || []).map((g, gi) => `<div class="cli-tg" data-g="${gi}"><h4>${esc(g.g)}</h4><div class="cli-tl">${g.l.map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener" data-url="${esc(u)}" data-t="${esc((t + ' ' + g.g).toLowerCase())}">${esc(t)}</a>`).join('')}</div></div>`).join('')}</div></div>`;
+    <input class="inp" id="bTram" type="search" placeholder="🔎 Buscar trámite (policía, contraloría, RUNT…)" style="margin-top:10px">
+    <div id="lTram" class="tp">${(window.TRAMITES || []).map((g, gi) => { const ic = icoTram(g.g); return `<section class="tp-g" data-g="${gi}" style="--tc:${ic[1]}"><header><span class="tp-ic">${ic[0]}</span><h4>${esc(g.g)}</h4><em>${g.l.length}</em></header>
+      <div class="tp-grid">${g.l.map(([t, u]) => { const dom = String(u).replace(/^https?:\/\/(www\.)?/, '').split(/[/:]/)[0]; return `<a class="tp-c" href="${esc(u)}" target="_blank" rel="noopener" data-url="${esc(u)}" data-t="${esc((t + ' ' + g.g).toLowerCase())}"><b>${esc(t)}</b><span>${esc(dom)}</span><i>↗</i></a>`; }).join('')}</div></section>`; }).join('')}</div></div>`;
+}
+function icoTram(g) {
+  const n = String(g).toLowerCase();
+  return /antecedente|certificado/.test(n) ? ['🛡️', '#0d7c86'] : /salud|pensi/.test(n) ? ['🏥', '#1f8a5b'] : /nacional|documento/.test(n) ? ['🪪', '#3b5bdb'] : /empleo p/.test(n) ? ['🏛️', '#7048e8']
+    : /contrataci/.test(n) ? ['📑', '#5c7cfa'] : /simit|multa|fotomulta/.test(n) ? ['🚦', '#e8590c'] : /tr[aá]nsito|veh/.test(n) ? ['🚗', '#e67700'] : /credit/.test(n) ? ['💳', '#c2255c']
+    : /impuesto/.test(n) ? ['🧾', '#b35b00'] : /sena/.test(n) ? ['🎓', '#2b8a3e'] : /gobernaci/.test(n) ? ['🏞️', '#1971c2'] : /barranca/.test(n) ? ['🏙️', '#0b7285'] : ['🔗', '#495057'];
 }
 function montarTramites(d) {
   const ced = d && V(d.num_id);
@@ -240,7 +264,7 @@ function montarTramites(d) {
   mainEl.querySelectorAll('#lTram a').forEach(a => a.onclick = () => { if (ced) copiar(ced, `Cédula ${ced} copiada: allá pégala con Ctrl+V`); });
   const b = mainEl.querySelector('#bTram');
   if (b) b.oninput = () => { const q = b.value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-    mainEl.querySelectorAll('.cli-tg').forEach(g => { let n = 0; g.querySelectorAll('a').forEach(a => { const ok = !q || a.dataset.t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(q); a.style.display = ok ? '' : 'none'; if (ok) n++; }); g.style.display = n ? '' : 'none'; }); };
+    mainEl.querySelectorAll('.tp-g').forEach(g => { let n = 0; g.querySelectorAll('a').forEach(a => { const ok = !q || a.dataset.t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(q); a.style.display = ok ? '' : 'none'; if (ok) n++; }); g.style.display = n ? '' : 'none'; }); };
 }
 
 /* ---------- subir una hoja de vida en Word: lee los datos y llena el formulario ---------- */
@@ -279,10 +303,11 @@ function secCobros(d) {
   const { esc } = C();
   const cb = cobrosDe(d);
   return `<div class="card"><div class="row"><h3 class="grow cli-h">🧾 Cuentas de cobro</h3><button class="btn chico" id="nuevaEmp">＋ Empresa</button></div>
-    <p class="muted cli-sub">Cada empresa lleva su propia numeración. Toca ＋ Cuenta y se llena sola con el número que sigue.</p>
+    <p class="muted cli-sub">Cada empresa lleva su propia numeración. Toca <b>🧾 Hacer cuenta</b> y sale el Word con el número que sigue.</p>
     ${cb.empresas.length ? cb.empresas.map(e => { const hs = cb.hechas.filter(h => h.emp === e.id); return `<div class="cli-emp">
       <div class="cli-fila"><div class="cli-fila-d"><b>${esc(e.contratante || 'Empresa')}</b><span>${e.nit ? 'NIT ' + esc(e.nit) + ' · ' : ''}sigue la N° ${num3(e.sig || 1)} · ${hs.length} hecha(s)</span></div>
-        <div class="cli-ic"><button data-cnueva="${e.id}" title="Nueva cuenta de cobro" class="mas">＋</button><button data-cemp="${e.id}" title="Editar empresa">✏️</button></div></div>
+        <div class="cli-ic"><button data-cemp="${e.id}" title="Editar empresa">✏️</button></div></div>
+      <button class="btn cli-hacer" data-cnueva="${e.id}">🧾 Hacer cuenta de cobro N° ${num3(e.sig || 1)} en Word</button>
       ${hs.length ? `<div class="cli-hechos">${hs.slice(0, 12).map(h => `<div class="cli-hecho"><span>N° ${esc(h.numero)} · ${esc(pesos(h.valor))}</span><i>${esc(h.periodo || fcorta(h.fecha))}</i><button class="cli-ic1" data-crebajar="${h.id}" title="Volver a bajar">⬇️</button></div>`).join('')}</div>` : ''}</div>`; }).join('')
     : '<p class="muted" style="margin-top:8px">Todavía no tiene empresas. Toca "＋ Empresa" y agrega a quién le cobra.</p>'}</div>`;
 }
@@ -310,7 +335,9 @@ function editarEmpresa(e) {
     t: 'Revisa', e: '✅', html: () => `<div class="cli-res"><div class="cli-res-b">${['contratante', 'nit', 'concepto', 'valor', 'fpago', 'banco', 'ncuenta'].map(n => `<div class="cli-res-i"><span>${C().esc(def(n).l || n)}</span><b>${C().esc(e[n] || '—')}</b></div>`).join('')}<div class="cli-res-i"><span>Próximo número</span><b>${num3(e.sig)}</b></div></div></div>`,
     acciones: [['💾 Guardar', async () => {
       const i = cb.empresas.findIndex(x => x.id === e.id); if (i >= 0) cb.empresas[i] = e; else cb.empresas.push(e);
-      await guardarCli(); C().toast('Empresa guardada ✓'); ficha('cobros'); return false;
+      await guardarCli(); C().toast('Empresa guardada ✓');
+      if (nueva) nuevaCuenta(cb.empresas.find(x => x.id === e.id) || e); else ficha('cobros');
+      return false;
     }, true]],
   }, () => ficha('cobros'));
 }
@@ -363,9 +390,9 @@ function asistente(titulo, pasos, fin, salir) {
     f.onsubmit = e => { e.preventDefault(); if (sg) sg.click(); };
     mainEl.querySelectorAll('[data-acc]').forEach(b => b.onclick = async () => {
       const a = fin.acciones[Number(b.dataset.acc)];
-      b.disabled = true; msg.className = 'muted'; msg.textContent = 'Un momento…';
+      b.disabled = true; msg.className = 'muted'; msg.textContent = 'Un momento…'; try { msg.scrollIntoView({ block: 'nearest' }); } catch (e) {}
       try { const r = await a[1](msg); if (r !== false && typeof r === 'string') { msg.className = 'note ok'; msg.textContent = r; } else if (r !== false) { msg.textContent = ''; } }
-      catch (x) { msg.className = 'note bad'; msg.textContent = x.message; }
+      catch (x) { msg.className = 'note bad'; msg.textContent = '⚠️ ' + (x.message || 'No se pudo generar'); try { msg.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
       b.disabled = false;
     });
     const primero = f.querySelector('input:not([type=checkbox]):not([type=file]),textarea'); if (primero && !esFin && !('ontouchstart' in window)) setTimeout(() => primero.focus(), 60);
@@ -515,10 +542,8 @@ function disenoHV(h, tipo) {
   const d = cli.data;
   if (!V(d.nombres) || !V(d.num_id)) return C().toast('Para bajarla faltan nombres o cédula: toca ✏️ Datos', true);
   if (!window.HVD) return C().toast('Recarga la página para ver los diseños nuevos', true);
-  const blob = window.HVD[tipo](d, h);
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `hoja-de-vida-${tipo}-${archivo(nombreDe(d))}.docx`;
-  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-  C().toast('Hoja de vida ' + (tipo === 'ats' ? 'ATS' : 'moderna') + ' descargada ✓');
+  bajarBlob(window.HVD[tipo](d, h), `hoja-de-vida-${tipo}-${archivo(nombreDe(d))}.docx`);
+  C().toast('Hoja de vida ATS descargada ✓');
 }
 
 /* foto: recorta al centro en 3x4 y la baja a JPEG liviano */
@@ -594,8 +619,18 @@ const archivo = s => String(s || 'documento').normalize('NFD').replace(/[̀-ͯ]/
 async function descargar(body, nombre) {
   const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!r.ok) { let j = {}; try { j = await r.json(); } catch (e) {} throw new Error(j.error || 'No se pudo generar el documento'); }
-  const b = await r.blob();
-  const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nombre;
-  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  bajarBlob(await r.blob(), nombre);
+}
+// guarda el archivo y deja un enlace visible por si el navegador no lo baja solo
+function bajarBlob(b, nombre) {
+  if (window.__ultimaUrl) URL.revokeObjectURL(window.__ultimaUrl);
+  const url = window.__ultimaUrl = URL.createObjectURL(b);
+  const a = document.createElement('a'); a.href = url; a.download = nombre; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 1000);
+  const q = document.querySelector('#bajarOtraVez'); if (q) q.remove();
+  const box = document.createElement('div'); box.id = 'bajarOtraVez'; box.className = 'bajar-otra';
+  box.innerHTML = `<span>📄 ${nombre.replace(/[<>&]/g, '')}</span><a class="btn chico" href="${url}" download="${nombre.replace(/"/g, '')}">⬇️ Si no bajó, toca aquí</a><button type="button" class="lnk" aria-label="Cerrar">✕</button>`;
+  box.querySelector('button').onclick = () => box.remove();
+  document.body.appendChild(box); setTimeout(() => box.remove(), 60000);
 }
 })();
