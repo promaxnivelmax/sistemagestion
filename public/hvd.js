@@ -264,5 +264,15 @@ async function leer(file) {
   return { d, hv };
 }
 
-window.HVD = { ats, moderna, leer };
+// imágenes pegadas dentro del Word (cédula, diplomas, certificados…)
+async function imagenes(file) {
+  const z = await unzip(await file.arrayBuffer()), out = [];
+  for (const n of z.nombres.filter(n => /^word\/media\/.+\.(jpe?g|png|gif|bmp|webp)$/i.test(n) && !/foto_hv/i.test(n))) {
+    const b = await z.saca(n); if (!b || b.length < 25000) continue; // logos e íconos no
+    const ext = n.split('.').pop().toLowerCase();
+    out.push({ nombre: n.split('/').pop(), blob: new Blob([b], { type: 'image/' + (ext === 'jpg' ? 'jpeg' : ext) }) });
+  }
+  return out;
+}
+window.HVD = { ats, moderna, leer, imagenes };
 })();
