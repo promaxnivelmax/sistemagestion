@@ -42,7 +42,7 @@ async function lienzo(blob) {
   const g = c.getContext('2d'); g.filter = 'grayscale(1) contrast(1.25)'; g.drawImage(bmp, 0, 0, c.width, c.height);
   return c;
 }
-async function pdfPaginas(file, max = 6) {
+async function pdfPaginas(file, max = 12) {
   const pdfjs = await import(PDFJS + 'pdf.min.mjs');
   pdfjs.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.mjs';
   const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise, out = [];
@@ -52,7 +52,11 @@ async function pdfPaginas(file, max = 6) {
     await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
     // si el PDF ya trae texto, se usa directo (más exacto que leer la imagen)
     const tc = await pg.getTextContent(); const txt = tc.items.map(x => x.str + (x.hasEOL ? '\n' : ' ')).join('');
-    out.push(txt.replace(/\s/g, '').length > 60 ? { texto: txt } : { img: await new Promise(r => c.toBlob(r, 'image/png')) });
+    let fotos = false; try { const ol = await pg.getOperatorList(); const O = pdfjs.OPS; fotos = ol.fnArray.some(f => f === O.paintImageXObject || f === O.paintInlineImageXObject || f === O.paintJpegXObject); } catch (e) {}
+    const conTexto = txt.replace(/\s/g, '').length > 60;
+    if (conTexto) out.push({ texto: txt, pagina: i });
+    // página escaneada, o con fotos pegadas (cédula, diplomas): se lee la imagen completa
+    if (!conTexto || fotos) out.push({ img: await new Promise(r => c.toBlob(r, 'image/png')), pagina: i, deFoto: conTexto });
   }
   return out;
 }
@@ -61,8 +65,11 @@ async function piezas(files) {
   const out = [];
   for (const f of files) {
     const n = f.name || 'imagen';
-    if (/\.pdf$/i.test(n) || f.type === 'application/pdf') (await pdfPaginas(f)).forEach((p, i) => out.push(Object.assign({ nombre: n + ' p' + (i + 1) }, p)));
-    else if (/\.docx$/i.test(n)) (await window.HVD.imagenes(f)).forEach(x => out.push({ nombre: n + ' · ' + x.nombre, img: x.blob }));
+    if (/\.pdf$/i.test(n) || f.type === 'application/pdf') (await pdfPaginas(f)).forEach(p => out.push(Object.assign({ nombre: n + ' p' + p.pagina, doc: n }, p)));
+    else if (/\.docx$/i.test(n)) {
+      out.push({ nombre: n, doc: n, texto: (await window.HVD.textoWord(f)).join('\n'), esWord: true });
+      (await window.HVD.imagenes(f)).forEach(x => out.push({ nombre: n + ' · ' + x.nombre, img: x.blob }));
+    }
     else if (/^image\//.test(f.type) || /\.(jpe?g|png|webp|bmp|gif)$/i.test(n)) out.push({ nombre: n, img: f });
   }
   return out;
@@ -133,6 +140,73 @@ function diploma(txt) {
   return r;
 }
 
+const SUFX = /(\bS\.?\s?A\.?\s?S\b|\bSAS\b|\bS\.\s?A\b|\bLTDA\b|\bE\.?\s?S\.?\s?P\b|CONSORCIO|UNION TEMPORAL|COOPERATIVA|CORPORACION|FUNDACION|ALCALDIA|GOBERNACION|HOSPITAL|CLINICA|ECOPETROL|INVERSIONES|COMERCIALIZADORA|DISTRIBUIDORA|INGENIERIA|CONSTRUCCIONES|CONSTRUCTORA|TRANSPORTES?|SERVICIOS|INDUSTRIAS?|GRUPO|DROGUERIA|FERRETERIA|SUPERMERCADO|ALMACEN)/;
+function esLaboral(t) { const T = Q(t); return /(CERTIFIC|HACE CONSTAR|HACEMOS CONSTAR|CONSTANCIA)/.test(T) && /(LABOR[OA]\b|LABORA|VINCULAD|PREST[OA] SUS SERVICIOS|TRABAJ[OA]|CONTRATO|DESEMPE[NÑ])/.test(T) && !/(CURSO Y APROBO|OTORGA EL TITULO|INTENSIDAD HORARIA|ACCION DE FORMACION|CURSO DE)/.test(T) && !esCedula(t) && !esHV(t); }
+function laboral(txt) {
+  const L = lineas(txt), TT = L.join(' '), r = {};
+  let m = TT.match(/(?:LA EMPRESA|EL CONSORCIO|LA UNION TEMPORAL|LA SOCIEDAD|LA COOPERATIVA|LA ENTIDAD|LA FIRMA)\s+([A-ZÑ0-9&.\- ]{3,70}?)(?:,|\s+(?:IDENTIFICAD|CON NIT|NIT\b|CERTIFICA|HACE CONSTAR|SE PERMITE|DOMICILIAD))/);
+  if (m) r.empresa = m[1].trim();
+  if (!r.empresa) {
+    const i = L.findIndex(l => /\bNIT\b/.test(l));
+    const cand = [i > 0 ? L[i - 1] : '', i >= 0 ? L[i].replace(/\bNIT\b.*$/, '').trim() : '', ...L.slice(0, 6)].filter(Boolean)
+      .find(l => l.length > 2 && l.length < 70 && (SUFX.test(l) || /^[A-ZÑ&.\- ]{4,60}$/.test(l)) && !/CERTIFICA|CONSTAR|REPUBLICA|SENOR|SEÑOR|A QUIEN|INTERESA|CONSTANCIA/.test(l));
+    if (cand) r.empresa = cand;
+  }
+  if (r.empresa) r.empresa = r.empresa.replace(/[,.;\s-]+$/, '');
+  m = TT.match(/(?:EL CARGO DE|CARGO DE|DESEMPE[NÑ]ANDO(?: EL CARGO DE)?|OCUPANDO EL CARGO DE|EN CALIDAD DE|EN EL OFICIO DE|COMO)\s*:?\s+([A-ZÑ0-9 ]{3,50}?)(?=\s*(?:[,.;]|\bDESDE\b|\bCON\b|\bEN\b|\bMEDIANTE\b|\bDURANTE\b|\bDEVENGANDO\b|\bBAJO\b|\bA TRAVES\b|\bPOR\b|\bHASTA\b|\bDEL\b|\bEL\b|\bY\b|$))/);
+  if (m && !/^(EMPLEADO|TRABAJADOR|CONTRATISTA)$/.test(m[1].trim())) r.cargo = m[1].trim(); else if (m) r.cargo = m[1].trim();
+  const cortar = TT.split(/\b(SE EXPIDE|SE FIRMA|DADA EN|DADO EN|PARA CONSTANCIA|LA PRESENTE SE)\b/)[0];
+  m = cortar.match(/DESDE\s+(?:EL\s+)?(.{4,45}?)\s+(?:HASTA|AL?)\s+(?:EL\s+)?(.{4,45}?)(?:[,.;]|\s+(?:DESEMPE|EN EL CARGO|COMO|CON|MEDIANTE|DEVENGANDO|OCUPANDO)|$)/);
+  if (m) { const a = fechas(m[1])[0], b = fechas(m[2])[0]; if (a) r.ingreso = a.f; if (/LA FECHA|ACTUAL|HOY/.test(m[2])) r.actual = true; else if (b) r.fin = b.f; }
+  if (!r.ingreso) { const fi = cortar.match(/(?:FECHA DE INGRESO|INGRESO|INICIO|VINCULACION)\s*:?\s*(.{4,35})/); if (fi && fechas(fi[1])[0]) r.ingreso = fechas(fi[1])[0].f; }
+  if (!r.fin && !r.actual) { const ff = cortar.match(/(?:FECHA DE RETIRO|RETIRO|TERMINACION|FINALIZACION|DESVINCULACION)\s*:?\s*(.{4,35})/); if (ff && fechas(ff[1])[0]) r.fin = fechas(ff[1])[0].f; }
+  if (!r.ingreso) { const fs = fechas(cortar); if (fs[0]) r.ingreso = fs[0].f; if (fs[1] && !r.fin) r.fin = fs[1].f; }
+  if (!r.fin && /(LABORA ACTUALMENTE|ACTUALMENTE LABORA|LABORA EN ESTA|A LA FECHA|HASTA LA FECHA|SE ENCUENTRA VINCULAD|VINCULADO ACTUALMENTE|PRESTA SUS SERVICIOS|ACTUALMENTE SE DESEMPENA|ACTUALMENTE)/.test(cortar)) r.actual = true;
+  const c = TT.replace(/(\d)[.,\s](?=\d)/g, '$1').match(/(?:C\s?C|CEDULA[A-Z ]{0,20}|IDENTIFICAD[OA] CON[A-Z ]{0,30})\s*(?:N[O°º.]*\s*)?:?\s*(\d{6,11})/); if (c) r.cedula = c[1];
+  const cd = TT.match(/(?:BARRANCABERMEJA|BUCARAMANGA|BOGOTA|MEDELLIN|CARTAGENA|PUERTO WILCHES|SABANA DE TORRES|YONDO|CIMITARRA|PUERTO BERRIO|SAN PABLO)/); if (cd) r.ciudad = cd[0];
+  return r;
+}
+function esHV(t) { const T = Q(t); let n = 0; [/EXPERIENCIA/, /ESTUDIOS|FORMACION ACADEMICA|EDUCACION/, /REFERENCIAS/, /DATOS PERSONALES|INFORMACION PERSONAL/, /PERFIL/, /HOJA DE VIDA|CURRICULUM/].forEach(r => { if (r.test(T)) n++; }); return n >= 2; }
+const completa0 = f => /^\d{4}-\d{2}-\d{2}$/.test(f || '');
+const fmt = f => /^\d{4}-\d{2}-\d{2}$/.test(f || '') ? f.split('-').reverse().join('/') : (f || '');
+/* junta una hoja de vida leída (o partes de ella) con la persona: agrega lo que falta y no repite lo que ya está */
+function fusionar(d, hv, r, hechos) {
+  const puse = [];
+  ['nombres', 'apellidos', 'num_id', 'expedicion', 'fecha_nac', 'lugar_nac', 'estado_civil', 'celular', 'correo', 'direccion', 'barrio'].forEach(k => { if (r.d && r.d[k] && !String(d[k] || '').trim()) { d[k] = r.d[k]; puse.push(k.replace('_', ' ').replace('num id', 'cédula')); } });
+  if (puse.length) hechos.push('🪪 Datos: ' + puse.join(', '));
+  if (!hv) return;
+  hv.estudios = hv.estudios || []; hv.experiencias = hv.experiencias || [];
+  for (const g of (r.hv && r.hv.estudios) || []) {
+    let mejor = null, pm = 0;
+    hv.estudios.forEach(e => { let s2 = Math.max(parecido((g.inst || '') + ' ' + (g.titulo || ''), (e.inst || '') + ' ' + (e.titulo || '')), parecido(g.titulo, e.titulo), parecido(g.inst, e.inst) * (g.titulo && e.titulo ? parecido(g.titulo, e.titulo) + 0.4 : 1)); if (e.nivel === g.nivel) s2 += 0.2; if (s2 > pm) { pm = s2; mejor = e; } });
+    if (mejor && pm >= 0.6) {
+      const antes = JSON.stringify(mejor);
+      if (g.fin && (!completa0(mejor.fin) && (completa0(g.fin) || !mejor.fin))) mejor.fin = g.fin;
+      ['inst', 'titulo', 'ciudad'].forEach(k => { if (!String(mejor[k] || '').trim() && g[k]) mejor[k] = g[k]; });
+      if (JSON.stringify(mejor) !== antes) hechos.push(`🎓 ${mejor.titulo || mejor.inst}: completé ${g.fin ? 'la fecha ' + fmt(mejor.fin) : 'datos'}`);
+    } else { hv.estudios.push({ nivel: g.nivel || 'Curso', inst: g.inst || '', titulo: g.titulo || '', ciudad: g.ciudad || '', fin: g.fin || '', actual: !!g.actual }); hechos.push(`🎓 Nuevo: ${g.titulo || g.inst}${g.fin ? ' (' + fmt(g.fin) + ')' : ''}`); }
+  }
+  for (const x of (r.hv && r.hv.experiencias) || []) {
+    if (!x.empresa) continue;
+    if (x.fin && x.ingreso && x.fin < x.ingreso) { x.fin = ''; hechos.push(`⚠️ ${x.empresa}: la fecha de retiro salió antes del ingreso, revísala`); }
+    let mejor = null, pm = 0;
+    hv.experiencias.forEach(e => { let s2 = parecido(x.empresa, e.empresa); if (x.cargo && e.cargo) s2 = s2 * 0.7 + parecido(x.cargo, e.cargo) * 0.3 + (s2 >= 0.8 ? 0.2 : 0); if (x.ingreso && e.ingreso && x.ingreso.slice(0, 4) === e.ingreso.slice(0, 4)) s2 += 0.2; if (s2 > pm) { pm = s2; mejor = e; } });
+    if (mejor && pm >= 0.6) {
+      const antes = JSON.stringify(mejor);
+      if (x.ingreso && !completa0(mejor.ingreso) && (completa0(x.ingreso) || !mejor.ingreso)) mejor.ingreso = x.ingreso;
+      if (x.fin && !completa0(mejor.fin) && !mejor.actual && (completa0(x.fin) || !mejor.fin)) mejor.fin = x.fin;
+      if (x.actual && !mejor.fin) mejor.actual = true;
+      ['cargo', 'ciudad'].forEach(k => { if (!String(mejor[k] || '').trim() && x[k]) mejor[k] = x[k]; });
+      if (JSON.stringify(mejor) !== antes) hechos.push(`💼 ${mejor.empresa}: completé ${[x.cargo && 'cargo', x.ingreso && 'ingreso', (x.fin || x.actual) && 'retiro'].filter(Boolean).join(', ')}`);
+    } else { hv.experiencias.push({ empresa: x.empresa, cargo: x.cargo || '', ingreso: x.ingreso || '', fin: x.fin || '', actual: !!x.actual, ciudad: x.ciudad || '' }); hechos.push(`💼 Nueva: ${x.empresa}${x.cargo ? ' · ' + x.cargo : ''}${x.ingreso ? ' (' + fmt(x.ingreso) + (x.actual ? ' - actual' : x.fin ? ' - ' + fmt(x.fin) : '') + ')' : ''}`); }
+  }
+  ['ref_fam', 'ref_per'].forEach(k => {
+    const nuevas = ((r.hv && r.hv[k]) || []).filter(x => x && x.nombre); if (!nuevas.length) return;
+    hv[k] = (hv[k] || []).concat([{}, {}]).slice(0, Math.max(2, (hv[k] || []).length));
+    for (const n of nuevas) { if (hv[k].some(x => x && x.nombre && parecido(x.nombre, n.nombre) >= 0.6)) continue; const j = hv[k].findIndex(x => !x || !String(x.nombre || '').trim()); if (j < 0) continue; hv[k][j] = { nombre: n.nombre, prof: n.prof || '', cel: n.cel || '' }; hechos.push(`🤝 Referencia: ${n.nombre}`); }
+  });
+}
+
 /* ---------- juntar lo encontrado con la persona y su hoja de vida ---------- */
 const pal = s => new Set(Q(s).replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 3 && !/^(INSTITUCION|EDUCATIVA|COLEGIO|ESCUELA|INSTITUTO|NACIONAL|TECNICO|BARRANCABERMEJA)$/.test(w)));
 function parecido(a, b) { const A = pal(a), B = pal(b); if (!A.size || !B.size) return 0; let n = 0; A.forEach(w => { if (B.has(w)) n++; }); return n / Math.min(A.size, B.size); }
@@ -141,8 +215,22 @@ function aplicar(ps, d, hv) {
   const hechos = [];
   // si hay una cédula de otra persona, tampoco se usa el respaldo (que no trae nombre)
   const ajena = ps.some(p => p.texto && esCedula(p.texto) && (() => { const c = cedula(p.texto); return (c.num_id && String(d.num_id || '').trim() && String(d.num_id).replace(/\D/g, '') !== c.num_id) || (c.nombres && String(d.nombres || '').trim() && parecido(c.nombres + ' ' + (c.apellidos || ''), d.nombres + ' ' + (d.apellidos || '')) < 0.5); })());
+  // 1) hojas de vida: las páginas de un mismo archivo que no son soportes se leen juntas
+  const docs = {};
+  ps.forEach(p => { if (!p.texto || p.deFoto) return; if (p.esWord || (!esCedula(p.texto) && !esLaboral(p.texto) && !esDiploma(p.texto))) { const k = p.doc || p.nombre; (docs[k] = docs[k] || []).push(p); } });
+  for (const k in docs) {
+    const txt = docs[k].map(p => p.texto).join('\n');
+    if (!docs[k].some(p => p.esWord) && !esHV(txt)) continue;
+    docs[k].forEach(p => { p.usada = true; });
+    if (hv && window.HVD && window.HVD.parsear) fusionar(d, hv, window.HVD.parsear(txt.split('\n')), hechos);
+  }
   for (const p of ps) {
-    if (!p.texto || p.texto.replace(/\s/g, '').length < 20) continue;
+    if (p.usada || !p.texto || p.texto.replace(/\s/g, '').length < 20) continue;
+    if (hv && esLaboral(p.texto)) {
+      const x = laboral(p.texto);
+      if (x.cedula && String(d.num_id || '').trim() && String(d.num_id).replace(/\D/g, '') !== x.cedula) { hechos.push('⚠️ Un certificado laboral es de otra cédula: no lo usé'); continue; }
+      if (x.empresa) { fusionar(d, hv, { hv: { experiencias: [x] } }, hechos); continue; }
+    }
     if (esCedula(p.texto)) {
       const c = cedula(p.texto), puse = [];
       // que sea la cédula de esta misma persona
@@ -176,9 +264,20 @@ function aplicar(ps, d, hv) {
   }
   return hechos;
 }
-async function leerSoportes(files, d, hv, avisa) {
-  const ps = await textos(await piezas(files), avisa);
+async function leerSoportes(files, d, hv, avisa, op = {}) {
+  let ps = await piezas(files); if (op.sinTextoWord) ps = ps.filter(p => !p.esWord);
+  ps = await textos(ps, avisa);
+  // las páginas escaneadas de una hoja de vida también cuentan como hoja de vida
+  ps.forEach(p => { if (p.img && p.texto && !p.doc) p.doc = p.nombre; });
   return { hechos: aplicar(ps, d, hv), leidas: ps.length, textos: ps.map(p => p.texto) };
 }
-window.OCR = { leerSoportes, piezas, textos, aplicar, fechas, cedula, diploma, esCedula, esDiploma };
+/* una hoja de vida en PDF o foto: se lee el texto (o la imagen) y aparte los soportes que traiga */
+async function leerHV(file, avisa) {
+  const ps = await textos(await piezas([file]), avisa);
+  const esSop = p => p.deFoto || esCedula(p.texto) || esLaboral(p.texto) || (esDiploma(p.texto) && !esHV(p.texto));
+  const hojas = ps.filter(p => p.texto && !esSop(p)), sop = ps.filter(p => p.texto && esSop(p));
+  const r = window.HVD.parsear(hojas.map(p => p.texto).join('\n').split('\n'));
+  return { d: r.d, hv: r.hv, hechos: aplicar(sop, r.d, r.hv) };
+}
+window.OCR = { leerHV, leerSoportes, piezas, textos, aplicar, fusionar, fechas, cedula, diploma, laboral, esCedula, esDiploma, esLaboral, esHV };
 })();
