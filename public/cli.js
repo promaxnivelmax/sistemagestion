@@ -140,7 +140,7 @@ async function guardarCli() {
 async function cargarLista() { lista = await C().rpc('cj_clientes_buscar', { p_token: C().S.token, p_q: q }); }
 async function verLista() {
   const { esc, toast } = C();
-  mainEl.innerHTML = `<div class="card"><div class="row" style="flex-wrap:nowrap"><h2 class="grow" style="margin:0;white-space:nowrap">👥 Clientes</h2><button class="btn sec chico" id="verTram" title="Enlaces de trámites" style="white-space:nowrap">🔗</button><button class="btn sec chico" id="subirHV" title="Subir una hoja de vida en Word y llenar todo solo" style="white-space:nowrap">⬆️ Subir HV</button><button class="btn sec chico" id="docRapido" title="Renuncia, referencia… para alguien sin registrar" style="white-space:nowrap">📑 Rápido</button><button class="btn chico" id="nuevoCli" style="white-space:nowrap">＋ Nuevo</button></div>
+  mainEl.innerHTML = `<div class="card"><div class="row" style="flex-wrap:nowrap"><h2 class="grow" style="margin:0;white-space:nowrap">👥 Clientes</h2><button class="btn sec chico" id="verTram" title="Enlaces de trámites" style="white-space:nowrap">🔗</button><button class="btn sec chico" id="subirHV" title="Subir una hoja de vida (Word, PDF o foto) y llenar todo solo" style="white-space:nowrap">⬆️ Subir HV</button><button class="btn sec chico" id="docRapido" title="Renuncia, referencia… para alguien sin registrar" style="white-space:nowrap">📑 Rápido</button><button class="btn chico" id="nuevoCli" style="white-space:nowrap">＋ Nuevo</button></div>
       <input class="inp" id="bCli" type="search" placeholder="🔎 Buscar por nombre, cédula o celular" value="${esc(q)}" style="margin-top:12px"></div>
     <div id="lCli" class="cli-lista"><p class="muted" style="padding:14px">Cargando…</p></div>`;
   const pinta = () => {
@@ -269,7 +269,7 @@ function montarTramites(d) {
 }
 
 /* ---------- soportes: cédula, diplomas y certificados en foto, PDF o Word ---------- */
-function cargarOCR() { return window.OCR ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/ocr.js?v=1'; s.onload = ok; s.onerror = () => no(new Error('no cargó el lector')); document.head.appendChild(s); }); }
+function cargarOCR() { return window.OCR ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/ocr.js?v=2'; s.onload = ok; s.onerror = () => no(new Error('no cargó el lector')); document.head.appendChild(s); }); }
 function avisoSoportes(items) {
   const { esc } = C(); const n = document.createElement('div'); n.className = 'note ok cli-aviso';
   n.innerHTML = `<b>📷 Leí de los soportes</b> <span class="muted">(revisa que esté bien)</span><br>${items.map(esc).join('<br>')}`;
@@ -293,15 +293,21 @@ function leerSoportesHV(h, btn) {
 
 /* ---------- subir una hoja de vida en Word: lee los datos y llena el formulario ---------- */
 function subirHV() {
-  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.docx,.pdf,application/pdf,image/*,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   inp.onchange = async () => {
     const f = inp.files[0]; if (!f) return;
-    if (!/\.docx$/i.test(f.name)) return C().toast('Solo Word nuevo (.docx). Si es .doc, ábrelo en Word y guárdalo como .docx', true);
+    if (/\.doc$/i.test(f.name)) return C().toast('Ese Word es viejo (.doc). Ábrelo en Word y guárdalo como .docx, o guárdalo en PDF', true);
     C().toast('Leyendo la hoja de vida…');
-    let r; try { r = await window.HVD.leer(f); } catch (e) { return C().toast('No pude leer ese Word: ' + e.message, true); }
-    const h = Object.assign(nuevaHV('Importada'), r.hv);
-    let hechos = [];
-    try { if ((await window.HVD.imagenes(f)).length) { await cargarOCR(); hechos = (await window.OCR.leerSoportes([f], r.d, h, m => C().toast('📷 Soportes: ' + m))).hechos; } } catch (e) { C().toast('No pude leer las imágenes: ' + e.message, true); }
+    let r, h, hechos = [];
+    if (/\.docx$/i.test(f.name)) {
+      try { r = await window.HVD.leer(f); } catch (e) { return C().toast('No pude leer ese Word: ' + e.message, true); }
+      h = Object.assign(nuevaHV('Importada'), r.hv);
+      try { if ((await window.HVD.imagenes(f)).length) { await cargarOCR(); hechos = (await window.OCR.leerSoportes([f], r.d, h, m => C().toast('📷 Soportes: ' + m), { sinTextoWord: true })).hechos; } } catch (e) { C().toast('No pude leer las imágenes: ' + e.message, true); }
+    } else {
+      // PDF (con texto o escaneado) o foto de la hoja de vida: se lee todo, incluidos los soportes que traiga
+      try { await cargarOCR(); r = await window.OCR.leerHV(f, m => C().toast('📷 ' + m)); } catch (e) { return C().toast('No pude leer ese archivo: ' + e.message, true); }
+      h = Object.assign(nuevaHV('Importada'), r.hv); hechos = r.hechos;
+    }
     if (!V(r.d.nombres) && !V(r.d.num_id)) return C().toast('No encontré nombre ni cédula en ese Word. Llénala a mano con ＋ Nuevo.', true);
     if (hechos.length) setTimeout(() => avisoSoportes(hechos), 300);
     // si la cédula ya existe, se agrega como otra hoja de vida de esa persona (no se borra nada)
@@ -389,13 +395,13 @@ async function rebajar(h, btn) {
 
 /* ---------- asistente por pasos (genérico) ---------- */
 // pasos: [{ t, e, html(), leer(), valida?() }], fin: { html(), acciones: [[texto, fn, primario]] }
-function asistente(titulo, pasos, fin, salir) {
+function asistente(titulo, pasos, fin, salir, op = {}) {
   const { esc } = C();
   let i = 0;
   const total = pasos.length + 1;
   const pinta = () => {
     const esFin = i === pasos.length, p = esFin ? fin : pasos[i];
-    mainEl.innerHTML = `<div class="card cli-wiz"><div class="row"><button class="lnk" id="wSalir" style="padding:0">✕ Salir</button><span class="grow"></span><span class="muted">${esc(titulo)}</span></div>
+    mainEl.innerHTML = `<div class="card cli-wiz"><div class="row"><button class="lnk" id="wSalir" style="padding:0">✕ Salir</button><span class="grow"></span>${op.herramienta ? `<button type="button" class="btn sec chico" id="wHerr" title="${esc(op.herramienta.titulo || '')}">${op.herramienta.txt}</button>` : `<span class="muted">${esc(titulo)}</span>`}</div>
         <div class="cli-prog"><i style="width:${Math.round((i + 1) * 100 / total)}%"></i></div>
         <div class="cli-pasos">${pasos.map((x, n) => `<button type="button" class="${n === i ? 'on' : n < i ? 'ok' : ''}" data-ir="${n}" title="${esc(x.t)}">${n < i ? '✓' : x.e}</button>`).join('')}<button type="button" class="${esFin ? 'on' : ''}" data-ir="${pasos.length}" title="Revisar">✅</button></div>
         <p class="muted" style="margin:10px 0 0">Paso ${i + 1} de ${total}</p><h2 class="cli-wt">${esFin ? (fin.e || '✅') + ' ' + esc(fin.t || 'Revisar') : p.e + ' ' + esc(p.t)}</h2>
@@ -410,6 +416,8 @@ function asistente(titulo, pasos, fin, salir) {
     const leer = () => { if (!esFin && p.leer) p.leer(f); };
     const ir = n => { leer(); i = n; pinta(); arriba(); };
     mainEl.querySelector('#wSalir').onclick = () => { leer(); salir(); };
+    const hr = mainEl.querySelector('#wHerr');
+    if (hr) hr.onclick = async () => { leer(); const txt = hr.textContent; hr.disabled = true; hr.textContent = '⏳ Leyendo…'; let res = null; try { res = await op.herramienta.fn(); } catch (e) { C().toast(e.message, true); } hr.disabled = false; hr.textContent = txt; if (res) { pinta(); if (op.herramienta.despues) op.herramienta.despues(res); } };
     mainEl.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => { const n = Number(b.dataset.ir); if (n > i && !esFin && p.valida) { leer(); const e = p.valida(); if (e) { msg.className = 'note bad'; msg.textContent = e; return; } } ir(n); });
     const at = mainEl.querySelector('#wAtras'); if (at) at.onclick = () => ir(i - 1);
     const sg = mainEl.querySelector('#wSig');
@@ -472,7 +480,18 @@ function asistentePersona(nuevo) {
       if (nuevo) { const hp = cli.hvPendiente; cli.hvPendiente = null; asistenteHV(hp || nuevaHV('Principal'), true); return false; }
       ficha(); arriba(); return false;
     }, true]],
-  }, () => { if (cli.id) ficha(); else { cli = null; verLista(); } });
+  }, () => { if (cli.id) ficha(); else { cli = null; verLista(); } }, { herramienta: {
+    txt: '📎 Leer cédula', titulo: 'Foto o PDF de la cédula (o una hoja de vida): llena los datos que falten',
+    fn: async () => {
+      const files = await elegirArchivos('image/*,application/pdf,.pdf,.docx', true); if (!files) return null;
+      await cargarOCR();
+      const hv = cli.hvPendiente || null;
+      const r = await window.OCR.leerSoportes(files, cli.data, hv, m => C().toast('📷 ' + m));
+      if (!r.hechos.length) { C().toast('No encontré datos nuevos en esos archivos.', true); return null; }
+      return r.hechos;
+    },
+    despues: hechos => avisoSoportes(hechos),
+  } });
 }
 
 /* ---------- asistente: una hoja de vida ---------- */
@@ -546,7 +565,25 @@ function asistenteHV(h, nueva) {
       ['💾 Guardar', async () => { await guardarHV(); C().toast('Hoja de vida guardada ✓'); ficha('hv'); return false; }],
       ['⬇️ Word', async () => { await guardarHV(); await wordHV(h); return '✅ Guardada y descargada en Word.'; }, true],
     ],
-  }, () => { if (cli.id) ficha('hv'); else { cli = null; verLista(); } });
+  }, () => { if (cli.id) ficha('hv'); else { cli = null; verLista(); } }, { herramienta: {
+    txt: '📎 Agregar soportes', titulo: 'Fotos, PDF o Word (cédula, diplomas, certificados laborales u otra hoja de vida): se lee y se agrega lo que falte',
+    fn: async () => {
+      const files = await elegirArchivos('image/*,application/pdf,.pdf,.docx', true); if (!files) return null;
+      await cargarOCR();
+      const r = await window.OCR.leerSoportes(files, cli.data, h, m => C().toast('📷 ' + m));
+      if (!r.hechos.length) { C().toast('No encontré nada nuevo en esos archivos (o ya estaba todo).', true); return null; }
+      return r.hechos;
+    },
+    despues: hechos => avisoSoportes(hechos),
+  } });
+}
+function elegirArchivos(accept, multiple) {
+  return new Promise(ok => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.multiple = !!multiple;
+    inp.onchange = () => ok(inp.files && inp.files.length ? [...inp.files] : null);
+    inp.addEventListener('cancel', () => ok(null));
+    inp.click();
+  });
 }
 async function wordHV(h, btn, formato) {
   const d = cli.data;
