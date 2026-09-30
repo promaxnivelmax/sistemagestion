@@ -171,97 +171,220 @@ async function unzip(buf) {
   const saca = async k => { const f = out[k]; if (!f) return null; if (f.met === 0) return f.raw; return new Uint8Array(await new Response(new Blob([f.raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()); };
   return { saca, nombres: Object.keys(out) };
 }
-const QUITA = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+const QUITA = s => String(s || '').normalize('NFD').replace(/ñ/g, 'ñ').replace(/Ñ/g, 'Ñ').replace(/[̀-ͯ]/g, '').toUpperCase();
 const MESES = { ENERO: 1, FEBRERO: 2, MARZO: 3, ABRIL: 4, MAYO: 5, JUNIO: 6, JULIO: 7, AGOSTO: 8, SEPTIEMBRE: 9, SETIEMBRE: 9, OCTUBRE: 10, NOVIEMBRE: 11, DICIEMBRE: 12 };
-function aFecha(s) {
-  const t = QUITA(T(s));
-  let m = t.match(/(\d{1,2})\s*(?:DE\s+)?([A-Z]+)\s*(?:DE(?:L)?\s+)?(\d{4})/); if (m && MESES[m[2]]) return `${m[3]}-${String(MESES[m[2]]).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-  m = t.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-  m = t.match(/(\d{4})-(\d{2})-(\d{2})/); if (m) return m[0];
-  m = t.match(/([A-Z]+)\s*(?:DE(?:L)?\s+)?(\d{4})/); if (m && MESES[m[1]]) return `${m[2]}-${String(MESES[m[1]]).padStart(2, '0')}-01`;
-  return (t.match(/(19|20)\d\d/) || [''])[0];
+const MES3 = { ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6, JUL: 7, AGO: 8, SEP: 9, SET: 9, OCT: 10, NOV: 11, DIC: 12 };
+const dos = n => String(n).padStart(2, '0');
+/* todas las fechas de un texto, en orden: completas (AAAA-MM-DD), mes y año (AAAA-MM-01) o solo el año */
+function fechasDe(s) {
+  const t = QUITA(T(s)), out = [], usado = [];
+  const add = (i, len, f) => { if (!f || usado.some(([a, b]) => i < b && i + len > a)) return; usado.push([i, i + len]); out.push({ i, f }); };
+  const run = (re, fn) => { let m; while ((m = re.exec(t))) add(m.index, m[0].length, fn(m)); };
+  const ok = (y, m, d) => (y > 1940 && y < 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31) ? `${y}-${dos(m)}-${dos(d)}` : '';
+  run(/\b(\d{1,2})\s*(?:\(\s*\d{1,2}\s*\)\s*)?(?:DIAS?\s+)?(?:DEL?\s+)?(?:MES\s+DE\s+)?(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|SETIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s*(?:DE[L]?\s+)?(?:ANO\s+)?(?:[A-Z ]{0,40}\(\s*)?((?:19|20)\d\d)/g, m => ok(+m[3], MESES[m[2]], +m[1]));
+  run(/\b(\d{1,2})\s*[-./ ]\s*(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEPT?|SET|OCT|NOV|DIC)[A-Z]*\.?\s*[-./ ]\s*((?:19|20)\d\d)\b/g, m => ok(+m[3], MES3[m[2].slice(0, 3)], +m[1]));
+  run(/\b(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*((?:19|20)\d\d)\b/g, m => ok(+m[3], +m[2], +m[1]));
+  run(/\b((?:19|20)\d\d)[/.-](\d{1,2})[/.-](\d{1,2})\b/g, m => ok(+m[1], +m[2], +m[3]));
+  run(/\b(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|SETIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEPT?|OCT|NOV|DIC)\.?\s*(?:DE[L]?\s+|[-/ ]\s*)?((?:19|20)\d\d)\b/g, m => { const n = MESES[m[1]] || MES3[m[1].slice(0, 3)]; return n ? `${m[2]}-${dos(n)}-01` : ''; });
+  run(/\b(\d{1,2})\s*[/.-]\s*((?:19|20)\d\d)\b/g, m => (+m[1] >= 1 && +m[1] <= 12) ? `${m[2]}-${dos(m[1])}-01` : '');
+  run(/\b((?:19|20)\d\d)\b/g, m => m[1]);
+  return out.sort((a, b) => a.i - b.i).map(x => x.f);
 }
+const aFecha = s => fechasDe(s)[0] || '';
+const AHORA = /ACTUAL|A LA FECHA|HASTA LA FECHA|PRESENTE|VIGENTE|HASTA HOY|EN CURSO|LABORANDO|CURSANDO/;
+const QL = s => QUITA(s).replace(/Ñ/g, 'N');
+const soloFechas = s => fechasDe(s).length && !/[A-Z]{4,}/.test(QUITA(s).replace(/\b(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|SETIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE|DESDE|HASTA|ACTUAL(MENTE)?|PRESENTE|FECHA|DEL?|AL?|ANO|EN CURSO)\b/g, ''));
 const bonito = s => titulo(s);
-async function leer(file) {
-  const z = await unzip(await file.arrayBuffer());
-  const xml = new TextDecoder().decode(await z.saca('word/document.xml') || new Uint8Array());
-  if (!xml) throw new Error('no encontré el texto del documento');
-  // párrafos de texto (tab = separador de columnas, salto = nueva línea)
-  const pars = (xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || []).map(p => p.replace(/<w:tab\/>/g, '\t').replace(/<w:br[^>]*\/>/g, '\n').replace(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g, '\u0001$1\u0002').replace(/<[^>]+>/g, '').replace(/\u0001|\u0002/g, '')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")).map(s => s.replace(/[  ]+/g, ' ').trim()).filter(Boolean);
+const pal = s => new Set(QUITA(s).replace(/[^A-Z0-9Ñ ]/g, ' ').split(/\s+/).filter(w => w.length > 2 && !/^(SAS|LTDA|DEL|LOS|LAS|UNA|INSTITUCION|EDUCATIVA|COLEGIO|ESCUELA|INSTITUTO|EMPRESA|BARRANCABERMEJA)$/.test(w)));
+function parecido(a, b) { const A = pal(a), B = pal(b); if (!A.size || !B.size) return 0; let n = 0; A.forEach(w => { if (B.has(w)) n++; }); return n / Math.min(A.size, B.size); }
+
+/* ---------- secciones y etiquetas (muchos formatos de hoja de vida) ---------- */
+const SECS = [[/^(ESTUDIOS|FORMACION|EDUCACION|INFORMACION ACADEMICA|DATOS ACADEMICOS|NIVEL EDUCATIVO|ESCOLARIDAD|CAPACITACION|CURSOS|OTROS ESTUDIOS|CERTIFICACIONES|ESTUDIOS REALIZADOS|PREPARACION ACADEMICA)/, 'est'],
+  [/^(EXPERIENCIA|HISTORIA LABORAL|TRAYECTORIA|INFORMACION LABORAL|DATOS LABORALES|EMPLEOS|VIDA LABORAL|ANTECEDENTES LABORALES)/, 'exp'],
+  [/^REFERENCIAS? FAMILIAR/, 'rf'], [/^REFERENCIAS? (PERSONAL|LABORAL|COMERCIAL)/, 'rp'], [/^REFERENCIAS?$/, 'rp'],
+  [/^(PERFIL|OBJETIVO|RESUMEN|ACERCA DE|SOBRE MI|PRESENTACION)/, 'perfil'], [/^(DATOS PERSONALES|INFORMACION PERSONAL|DATOS BASICOS|DATOS GENERALES)/, 'dp'],
+  [/^(HABILIDADES|COMPETENCIAS|IDIOMAS|APTITUDES|FORTALEZAS|ATENTAMENTE|DECLARO|CORDIALMENTE)/, 'otro']];
+const esSec = P => { if (/:\s*\S/.test(P)) return null; const s = P.replace(/[:.\s]+$/, '').trim(); if (s.length > 45) return null; for (const [r, k] of SECS) if (r.test(s)) return k; return null; };
+const ETQ_SOLA = /^(NOMBRES?( COMPLETOS?)?|APELLIDOS|IDENTIFICACION|CEDULA( DE CIUDADANIA)?|DOCUMENTO( DE IDENTIDAD)?|NUMERO DE (DOCUMENTO|CEDULA)|LUGAR DE EXPEDICION|EXPEDIDA EN|FECHA DE NACIMIENTO|LUGAR DE NACIMIENTO|ESTADO CIVIL|CELULAR|TELEFONOS?( CELULAR)?|MOVIL|DIRECCION|BARRIO|CORREO( ELECTRONICO)?|E-?MAIL|EMPRESA|ENTIDAD|EMPLEADOR|RAZON SOCIAL|CARGO( DESEMPENADO)?|PUESTO|FECHA DE (INGRESO|RETIRO|INICIO|TERMINACION|FINALIZACION|GRADO)|DESDE|HASTA|PERIODO|TIEMPO LABORADO|CIUDAD|JEFE INMEDIATO|FUNCIONES|INSTITUCION( EDUCATIVA)?|TITULO( OBTENIDO)?|ANO( DE GRADO)?|PROFESION|OCUPACION|PARENTESCO|NIVEL( EDUCATIVO)?|PROGRAMA|FECHAS?|TIEMPO|NOMBRE|TELEFONO|CEL)$/;
+const LB = {
+  emp: /^(NOMBRE DE LA )?(EMPRESA|ENTIDAD|EMPLEADOR|COMPANIA|CONTRATANTE|LUGAR DE TRABAJO|RAZON SOCIAL|ORGANIZACION)\b/,
+  cargo: /^(CARGO|PUESTO|OFICIO|OCUPACION|ROL|LABOR DESEMPENADA)/,
+  ini: /(INGRESO|INICIO|DESDE|FECHA INICIAL|VINCULACION)/,
+  fin: /(RETIRO|FINALIZ|TERMINACION|SALIDA|HASTA|FECHA FINAL|DESVINCULACION|EGRESO)/,
+  per: /(PERIODO|TIEMPO|DURACION|FECHAS?|LAPSO)$/,
+  ciudad: /^(CIUDAD|MUNICIPIO|LUGAR|UBICACION)$/,
+  nada: /(JEFE|TELEFONO|FUNCIONES|LOGROS|RESPONSABILIDADES|MOTIVO|SALARIO|CONTRATO|DIRECCION|NIT|REFERENCIA)/,
+};
+const SUF = /(\bS\.?\s?A\.?\s?S\b\.?|\bSAS\b|\bS\.\s?A\b\.?|\bLTDA\b\.?|\bE\.?\s?S\.?\s?P\b\.?|\bCONSORCIO\b|\bUNION TEMPORAL\b|\bCOOPERATIVA\b|\bCORPORACION\b|\bFUNDACION\b|\bASOCIACION\b|\bALCALDIA\b|\bGOBERNACION\b|\bHOSPITAL\b|\bCLINICA\b|\bECOPETROL\b|\bMINISTERIO\b|\bINVERSIONES\b|\bCOMERCIALIZADORA\b|\bDISTRIBUIDORA\b|\bINGENIERIA\b|\bCONSTRUCCIONES\b|\bCONSTRUCTORA\b|\bTRANSPORTES?\b|\bRESTAURANTE\b|\bTIENDA\b|\bSUPERMERCADO\b|\bDROGUERIA\b|\bFERRETERIA\b|\bALMACEN(ES)?\b|\bINDUSTRIAS?\b|\bGRUPO\b|\bSERVICIOS\b|\bE\.?\s?U\b\.?|\bS\.?\s?C\.?\s?A\b)/;
+const INSTS = /(COLEGIO|INSTITUCION|INSTITUTO|ESCUELA|UNIVERSIDAD|\bSENA\b|SERVICIO NACIONAL DE APRENDIZAJE|CORPORACION|FUNDACION|POLITECNICO|CENTRO DE|CONCENTRACION|ACADEMIA|UNIPAZ|UNAD|UIS\b|ESAP)/;
+const TITS = /(BACHILLER|TECNICO|TECNOLOGO|PROFESIONAL|LICENCIAD|INGENIER|ADMINISTRAD|CONTADOR|ABOGAD|ENFERMER|AUXILIAR|ESPECIALISTA|MAGISTER|BASICA PRIMARIA|PRIMARIA|CURSO|DIPLOMADO|SEMINARIO|CERTIFICADO EN|OPERARIO|SOLDADURA)/;
+const DESCRIPCION = /^(•|-|\*|·|>|FUNCION|RESPONSAB|APOYO|MANEJO|REALIZ|ATENCION|ENCARGAD|ELABORA|CONTROL|SUPERVIS|ASISTEN|ORGANIZA|LIMPIEZA|ARCHIVO|VENTA|CUMPLI|PARTICIP|DESARROLL|COORDIN|EJECUC|MANTENIM|REPARAC|OPERAC)/;
+
+/* texto de una hoja de vida (líneas) -> datos de la persona y su hoja de vida */
+function parsear(lineasIn) {
+  // unir "ETIQUETA" (sola) con el valor de la línea siguiente (tablas y formatos en columnas)
+  const L0 = lineasIn.flatMap(p => String(p).split('\n')).map(s => s.replace(/[ \u00a0]{3,}/g, '\t').replace(/[  ]+/g, ' ').replace(/\t+/g, '\t').trim()).filter(Boolean), pars = [];
+  for (let i = 0; i < L0.length; i++) {
+    const s = L0[i], S = QL(s).replace(/[:.\s]+$/, '').trim();
+    if (ETQ_SOLA.test(S) && L0[i + 1] && !ETQ_SOLA.test(QL(L0[i + 1]).replace(/[:.\s]+$/, '').trim()) && !esSec(QUITA(L0[i + 1])) && !/:\s*\S/.test(L0[i + 1])) { pars.push(s.replace(/[:\s]+$/, '') + ': ' + L0[i + 1]); i++; }
+    else if (/:\s*\S/.test(s) && (s.match(/:/g) || []).length >= 2 && /\s[|·•]\s|\t/.test(s)) {
+      // varias etiquetas en una misma línea: "Empresa: X | Cargo: Y | Tiempo: 2019 a 2020" (la empresa va primero)
+      const seg = s.split(/\s*[|·•]\s*|\t/).map(T).filter(Boolean);
+      seg.sort((a, b) => (LB.emp.test(QL(b.split(':')[0]).trim()) ? 1 : 0) - (LB.emp.test(QL(a.split(':')[0]).trim()) ? 1 : 0)).forEach(x => pars.push(x));
+    } else pars.push(s);
+  }
   const d = {}, hv = { estudios: [], experiencias: [], ref_fam: [], ref_per: [], sin_exp: '' };
   let sec = '', exp = null, ref = null, est = null;
   const cierraExp = () => { if (exp && exp.empresa) hv.experiencias.push(exp); exp = null; };
   const cierraRef = () => { if (ref && ref.nombre) (sec === 'rf' ? hv.ref_fam : hv.ref_per).push(ref); ref = null; };
-  const etq = s => { const m = s.match(/^([A-Za-zÁÉÍÓÚÑáéíóúñ.º° /()]{2,40}?)\s*:\s*(.*)$/s); return m ? [QUITA(m[1]).replace(/\s+/g, ' ').trim(), m[2].replace(/\t+/g, ' ').trim()] : null; };
-  const NIV = /^(PRIMARIA|BASICA PRIMARIA|SECUNDARIA|BACHILLER(ATO)?|MEDIA|TECNICO|TECNICA|TECNOLOGO|TECNOLOGIA|UNIVERSITARIO|UNIVERSITARIA|PROFESIONAL|PREGRADO|POSGRADO|ESPECIALIZACION|MAESTRIA|CURSO|CURSOS|DIPLOMADO|SEMINARIO|CAPACITACION|OTROS ESTUDIOS)$/;
-  const nivelDe = s => { const t = QUITA(s); if (/PRIMARIA|BASICA/.test(t)) return 'Primaria'; if (/SECUNDARIA|BACHILLER|MEDIA/.test(t)) return 'Secundaria'; if (/TECNOLOG/.test(t)) return 'Tecnólogo'; if (/TECNIC/.test(t)) return 'Técnico'; if (/UNIVERSIT|PROFESIONAL|PREGRADO|POSGRADO|ESPECIALIZ|MAESTR/.test(t)) return 'Universitario'; return 'Curso'; };
-  for (let i = 0; i < pars.length; i++) {
-    const p = pars[i], P = QUITA(p).replace(/\s+/g, ' ');
-    // títulos de sección
-    if (!p.includes(':') || P.length < 40 && /^(ESTUDIOS|FORMACION|EXPERIENCIA|REFERENCIAS?|PERFIL|DATOS PERSONALES)/.test(P)) {
-      if (/^(ESTUDIOS|FORMACION|EDUCACION)/.test(P)) { cierraExp(); cierraRef(); sec = 'est'; continue; }
-      if (/^EXPERIENCIA/.test(P)) { cierraRef(); sec = 'exp'; continue; }
-      if (/^REFERENCIAS? FAMILIAR/.test(P)) { cierraExp(); cierraRef(); sec = 'rf'; continue; }
-      if (/^REFERENCIAS? (PERSONAL|LABORAL)/.test(P)) { cierraExp(); cierraRef(); sec = 'rp'; continue; }
-      if (/^PERFIL/.test(P)) { cierraExp(); sec = 'perfil'; continue; }
-      if (/^DATOS PERSONALES/.test(P)) { sec = 'dp'; continue; }
+  const etq = s => { const m = s.match(/^([A-Za-zÁÉÍÓÚÑáéíóúñ.º° /()]{2,40}?)\s*:\s*(.*)$/s); return m ? [QL(m[1]).replace(/\s+/g, ' ').trim(), m[2].replace(/\t+/g, ' ').trim()] : null; };
+  const NIV = /^(PRIMARIA|BASICA PRIMARIA|SECUNDARIA|BASICA SECUNDARIA|BACHILLER(ATO)?|MEDIA|TECNICO|TECNICA|TECNOLOGO|TECNOLOGIA|UNIVERSITARIO|UNIVERSITARIA|PROFESIONAL|PREGRADO|POSGRADO|ESPECIALIZACION|MAESTRIA|CURSO|CURSOS|DIPLOMADO|SEMINARIO|CAPACITACION|OTROS ESTUDIOS|EDUCACION BASICA|EDUCACION MEDIA|EDUCACION SUPERIOR)$/;
+  const nivelDe = s => { const t = QUITA(s); if (/PRIMARIA/.test(t)) return 'Primaria'; if (/SECUNDARIA|BACHILLER|MEDIA|BASICA/.test(t)) return 'Secundaria'; if (/TECNOLOG/.test(t)) return 'Tecnólogo'; if (/TECNIC/.test(t)) return 'Técnico'; if (/UNIVERSIT|PROFESIONAL|PREGRADO|POSGRADO|ESPECIALIZ|MAESTR|SUPERIOR|LICENCIAD|INGENIER/.test(t)) return 'Universitario'; return 'Curso'; };
+  const nuevaExp = emp => { cierraExp(); exp = { empresa: bonito(emp), cargo: '', ingreso: '', fin: '', actual: false, ciudad: '' }; };
+  const ponRango = txt => { if (!exp) return; const f = fechasDe(txt); if (f[0] && !exp.ingreso) exp.ingreso = f[0]; if (f[1] && !exp.fin) exp.fin = f[1]; if (AHORA.test(QUITA(txt)) && !exp.fin) exp.actual = true; };
+  const pareceEmpresa = s => { const U = QUITA(s); if (SUF.test(U)) return true; return s.length >= 3 && s.length <= 70 && s === s.toUpperCase() && /[A-ZÑ]{3}/.test(U) && !/[.:;]$/.test(s) && !DESCRIPCION.test(U) && U.split(' ').length <= 9; };
+  let pend = '';
+  function lineaExp(p, e) {
+    if (e) {
+      const [k, v] = e;
+      if (LB.emp.test(k)) { if (exp && exp.empresa === '' ) exp.empresa = bonito(v); else nuevaExp(v); return; }
+      if (!exp) exp = { empresa: '', cargo: '', ingreso: '', fin: '', actual: false, ciudad: '' };
+      if (LB.cargo.test(k)) { exp.cargo = bonito(v); return; }
+      if (LB.nada.test(k)) return;
+      if (LB.fin.test(k) && !LB.ini.test(k)) { if (AHORA.test(QUITA(v))) exp.actual = true; else { const f = fechasDe(v); if (f[0]) exp.fin = f[0]; } return; }
+      if (LB.ini.test(k)) { const f = fechasDe(v); if (f[0]) exp.ingreso = f[0]; if (f[1]) exp.fin = f[1]; if (AHORA.test(QUITA(v))) exp.actual = true; return; }
+      if (LB.per.test(k)) { ponRango(v); return; }
+      if (LB.ciudad.test(k)) { exp.ciudad = bonito(v); return; }
+      return;
     }
+    if (DESCRIPCION.test(QUITA(p)) || p.length > 110) return; // funciones y párrafos largos no
+    const partes = p.split(/\s+[-–—|•]\s+|\s*\|\s*|\t+|\s{3,}/).map(T).filter(Boolean);
+    const conF = partes.filter(x => fechasDe(x).length || AHORA.test(QUITA(x))), sinF = partes.filter(x => !conF.includes(x));
+    if (!sinF.length) { ponRango(p); return; }
+    const a = sinF[0];
+    if (SUF.test(QUITA(a)) && exp && exp.empresa && !exp.cargo && !exp.ingreso && !SUF.test(QUITA(exp.empresa))) { exp.cargo = exp.empresa; exp.empresa = bonito(a); }
+    else if (SUF.test(QUITA(a)) || ((!exp || (exp.empresa && (exp.cargo || exp.ingreso))) && pareceEmpresa(a))) { nuevaExp(a); if (sinF[1]) exp.cargo = bonito(sinF[1]); else if (pend) exp.cargo = bonito(pend); pend = ''; }
+    else if (exp && !exp.cargo && !exp.ingreso && !exp.actual && a.length <= 60 && !/\d{3}/.test(a)) exp.cargo = bonito(a);
+    else if (exp && !exp.empresa) exp.empresa = bonito(a);
+    else if (a.length <= 60 && !/\d{3}/.test(a)) { pend = a; return; }
+    if (conF.length) ponRango(conF.join(' '));
+  }
+  let celSuelto = '', correoSuelto = '';
+  for (let i = 0; i < pars.length; i++) {
+    const p = pars[i], P = QL(p).replace(/\s+/g, ' ');
+    const k = esSec(P);
+    if (k) { cierraExp(); cierraRef(); sec = k; est = null; continue; }
+    if (!correoSuelto) { const m = p.match(/[\w.+-]+@[\w-]+\.[\w.]+/); if (m && sec !== 'rf' && sec !== 'rp') correoSuelto = m[0].toLowerCase(); }
+    if (!celSuelto && (sec === '' || sec === 'dp')) { const m = p.replace(/[\s.-]/g, '').match(/(?:^|\D)(3\d{9})(?!\d)/); if (m) celSuelto = m[1]; }
     const e = etq(p);
+    if (!e && (sec === 'est' || sec === 'exp') && ETQ_SOLA.test(P.replace(/[:.\s]+$/, ''))) continue; // encabezados de tabla sueltos
     if (sec === 'perfil' && !e) { hv.sin_exp = (hv.sin_exp + ' ' + p).trim(); continue; }
     if (sec === 'est') {
       if (e && NIV.test(e[0])) { est = { nivel: nivelDe(e[0]), inst: bonito(e[1]), titulo: '', ciudad: '', fin: '' }; hv.estudios.push(est); continue; }
-      if (e && /^(TITULO|TITULO OBTENIDO)$/.test(e[0]) && est) { est.titulo = bonito(e[1]); continue; }
-      if (e && /^(INSTITUCION|COLEGIO|ESTABLECIMIENTO)$/.test(e[0])) { est = { nivel: 'Secundaria', inst: bonito(e[1]), titulo: '', ciudad: '', fin: '' }; hv.estudios.push(est); continue; }
-      if (e && /^(ANO|FECHA|FECHA DE GRADO|ANO DE GRADO)$/.test(e[0]) && est) { est.fin = aFecha(e[1]); continue; }
-      if (e && /^CIUDAD$/.test(e[0]) && est) { est.ciudad = bonito(e[1]); continue; }
-      if (!e && est && !est.titulo) { const l = p.split('\n').map(T).filter(Boolean); est.titulo = bonito(l[0] || ''); if (l[1]) { const [c, f] = l[1].split(' - '); est.ciudad = bonito(c); if (f) est.fin = aFecha(f); } continue; }
-      if (!e && est && !est.ciudad) { const [c, f] = p.split(' - '); est.ciudad = bonito(c); if (f) est.fin = aFecha(f); continue; }
+      if (e && /^(TITULO|TITULO OBTENIDO|PROGRAMA|CARRERA|TITULO ALCANZADO)$/.test(e[0])) { if (!est || est.titulo) { est = { nivel: nivelDe(e[1]), inst: '', titulo: '', ciudad: '', fin: '' }; hv.estudios.push(est); } est.titulo = bonito(e[1]); if (!est.nivel || est.nivel === 'Curso') est.nivel = nivelDe(e[1]); continue; }
+      if (e && /^(INSTITUCION|INSTITUCION EDUCATIVA|COLEGIO|ESTABLECIMIENTO|UNIVERSIDAD|ENTIDAD|CENTRO EDUCATIVO|LUGAR DE ESTUDIO|ENTIDAD EDUCATIVA)$/.test(e[0])) { if (!est || est.inst) { est = { nivel: nivelDe(e[1]), inst: '', titulo: '', ciudad: '', fin: '' }; hv.estudios.push(est); } est.inst = bonito(e[1]); continue; }
+      if (e && /^(ANO|FECHA|FECHA DE GRADO|ANO DE GRADO|FECHA DE FINALIZACION|ANO DE TERMINACION|FECHA DE TERMINACION|GRADUADO|FINALIZADO)/.test(e[0]) && est) { if (AHORA.test(QUITA(e[1]))) est.actual = true; else est.fin = fechasDe(e[1]).pop() || est.fin; continue; }
+      if (e && /^(CIUDAD|LUGAR|MUNICIPIO)$/.test(e[0]) && est) { est.ciudad = bonito(e[1]); continue; }
+      if (e && /^(NIVEL|NIVEL EDUCATIVO|GRADO)$/.test(e[0])) { est = { nivel: nivelDe(e[1]), inst: '', titulo: '', ciudad: '', fin: '' }; hv.estudios.push(est); continue; }
+      if (!e) {
+        const S = P.replace(/[:.\s]+$/, '');
+        if (NIV.test(S) && (!est || (est.inst && est.titulo))) { est = { nivel: nivelDe(S), inst: '', titulo: '', ciudad: '', fin: '' }; hv.estudios.push(est); continue; }
+        if (est && soloFechas(p)) { if (AHORA.test(P)) est.actual = true; else est.fin = fechasDe(p).pop(); continue; }
+        const partes = p.split(/\s+[-–—|]\s+|\t+|\s{3,}/).map(T).filter(Boolean);
+        const inst = partes.find(x => INSTS.test(QUITA(x)));
+        if (inst && (!est || est.inst)) {
+          est = { nivel: nivelDe(p), inst: bonito(T(inst.replace(/\b(19|20)\d\d\b/g, '').replace(/[,;.\s-]+$/, ''))), titulo: '', ciudad: '', fin: fechasDe(p).pop() || '' }; hv.estudios.push(est);
+          const tit = partes.find(x => x !== inst && TITS.test(QUITA(x)) && !fechasDe(x).length); if (tit) est.titulo = bonito(tit);
+          if (AHORA.test(P)) est.actual = true; continue;
+        }
+        const limpio = x => T(String(x).replace(/\b(19|20)\d\d\b/g, '').replace(/[,;.\s-]+$/, ''));
+        if (est && !est.inst) { est.inst = bonito(limpio(inst || partes[0])); if (fechasDe(p).length) est.fin = fechasDe(p).pop(); continue; }
+        if (est && est.inst && est.titulo && TITS.test(P) && !INSTS.test(P)) { est = { nivel: nivelDe(p), inst: '', titulo: bonito(limpio(partes[0])), ciudad: '', fin: fechasDe(p).pop() || '' }; hv.estudios.push(est); continue; }
+        if (est && !est.titulo) { const l = p.split('\n').map(T).filter(Boolean); est.titulo = bonito((l[0] || '').replace(/\s+[-–]\s+.*$/, '')); const r = (l[1] || (/\s+[-–]\s+/.test(l[0]) ? l[0].split(/\s+[-–]\s+/).slice(1).join(' - ') : '')); if (r) { const [c, f] = r.split(' - '); if (c && !fechasDe(c).length) est.ciudad = bonito(c); const ff = fechasDe(r).pop(); if (ff) est.fin = ff; } if (!est.fin && fechasDe(l[0]).length) est.fin = fechasDe(l[0]).pop(); if (est.nivel === 'Curso' && TITS.test(QUITA(est.titulo))) est.nivel = nivelDe(est.titulo); continue; }
+        if (est && !est.ciudad) { const [c, f] = p.split(' - '); if (!fechasDe(c).length) est.ciudad = bonito(c); const ff = fechasDe(p).pop(); if (ff) est.fin = ff; continue; }
+        if (!est && TITS.test(P)) { est = { nivel: nivelDe(p), inst: '', titulo: bonito(partes[0]), ciudad: '', fin: fechasDe(p).pop() || '' }; hv.estudios.push(est); continue; }
+        continue;
+      }
     }
-    if (sec === 'exp' && e) {
-      if (/^(EMPRESA|ENTIDAD|EMPLEADOR)$/.test(e[0])) { cierraExp(); exp = { empresa: bonito(e[1]), cargo: '', ingreso: '', fin: '', actual: false, ciudad: '' }; continue; }
-      if (!exp) exp = { empresa: '', cargo: '', ingreso: '', fin: '', actual: false, ciudad: '' };
-      if (/^(CARGO|OFICIO)$/.test(e[0])) { exp.cargo = bonito(e[1]); continue; }
-      if (/INGRESO|INICIO|DESDE/.test(e[0])) { exp.ingreso = aFecha(e[1]); continue; }
-      if (/FINALIZ|RETIRO|SALIDA|HASTA|TERMINACION/.test(e[0])) { if (/ACTUAL/.test(QUITA(e[1]))) exp.actual = true; else exp.fin = aFecha(e[1]); continue; }
-      if (/^CIUDAD$/.test(e[0])) { exp.ciudad = bonito(e[1]); continue; }
-      if (/JEFE|TELEFONO|FUNCIONES/.test(e[0])) continue;
-    }
+    if (sec === 'exp') { lineaExp(p, e); continue; }
     if ((sec === 'rf' || sec === 'rp') && e) {
-      if (/^NOMBRES?( COMPLETO)?$/.test(e[0])) { cierraRef(); ref = { nombre: bonito(e[1]), prof: '', cel: '' }; continue; }
+      if (/^NOMBRES?( COMPLETO)?( Y APELLIDOS?)?$/.test(e[0])) { cierraRef(); ref = { nombre: bonito(e[1]), prof: '', cel: '' }; continue; }
       if (!ref) continue;
-      if (/PROFESION|OCUPACION|PARENTESCO|CARGO/.test(e[0])) { ref.prof = bonito(e[1]); continue; }
-      if (/CELULAR|TELEFONO|CEL|TEL/.test(e[0])) { ref.cel = e[1].replace(/[^0-9 +]/g, '').trim(); continue; }
+      if (/PROFESION|OCUPACION|PARENTESCO|CARGO|RELACION/.test(e[0])) { ref.prof = bonito(e[1]); continue; }
+      if (/CELULAR|TELEFONO|CEL|TEL|MOVIL|CONTACTO/.test(e[0])) { ref.cel = e[1].replace(/[^0-9 +]/g, '').trim(); continue; }
+    }
+    if ((sec === 'rf' || sec === 'rp') && !e) {
+      // "NOMBRE – PARENTESCO – 3001234567"
+      const tel = p.replace(/[\s.-]/g, '').match(/3\d{9}|\d{7,10}/), partes = p.split(/\s+[-–—|]\s+|\t+|\s{3,}|,\s*/).map(T).filter(Boolean);
+      if (tel && partes.length >= 2) { cierraRef(); ref = { nombre: bonito(partes[0]), prof: bonito(partes.find((x, j) => j > 0 && !/\d{5}/.test(x)) || ''), cel: tel[0] }; cierraRef(); continue; }
+      if (!ref && /^[A-ZÁÉÍÓÚÑ ]{6,50}$/.test(p)) { ref = { nombre: bonito(p), prof: '', cel: '' }; continue; }
+      if (ref && !ref.cel && tel) { ref.cel = tel[0]; continue; }
+      if (ref && !ref.prof && p.length < 40) { ref.prof = bonito(p); continue; }
     }
     if (e) {
       const [k, v] = e;
-      if (k === 'NOMBRES' || k === 'NOMBRE' && !d.nombres && sec !== 'rf' && sec !== 'rp') { d.nombres = bonito(v); continue; }
+      if (/^NOMBRES?( COMPLETOS?)?$/.test(k) && !d.nombres && sec !== 'rf' && sec !== 'rp') { if (k === 'NOMBRE COMPLETO' || (k === 'NOMBRE' && v.split(' ').length > 2)) { const w = bonito(v).split(' '); d.nombres = w.slice(0, w.length > 3 ? 2 : 1).join(' '); d.apellidos = w.slice(w.length > 3 ? 2 : 1).join(' '); } else d.nombres = bonito(v); continue; }
       if (k === 'APELLIDOS') { d.apellidos = bonito(v); continue; }
-      if (/^(IDENTIFICACION|CEDULA|DOCUMENTO|C\.?C\.?|NO\.? DE (DOCUMENTO|CEDULA)|NUMERO DE (DOCUMENTO|CEDULA))/.test(k)) { const n = v.replace(/\./g, '').match(/\d{5,12}/); if (n) d.num_id = n[0]; if (/C\.?E\.?/.test(QUITA(v))) d.tipo_id = 'C.E.'; const ex = QUITA(v).match(/ DE ([A-Z ]+)$/); if (ex && !d.expedicion) d.expedicion = bonito(ex[1]); continue; }
-      if (/EXPEDICION|EXPEDIDA/.test(k)) { d.expedicion = bonito(v); continue; }
-      if (/FECHA DE NACIMIENTO|NACIMIENTO$/.test(k) && /\d/.test(v)) { d.fecha_nac = aFecha(v); continue; }
+      if (/^(IDENTIFICACION|CEDULA|DOCUMENTO|C\.?\s?C\.?|NO\.? DE (DOCUMENTO|CEDULA|IDENTIFICACION)|NUMERO DE (DOCUMENTO|CEDULA|IDENTIFICACION)|DOCUMENTO DE IDENTIDAD|CEDULA DE CIUDADANIA)/.test(k)) { const n = v.replace(/[.,\s]/g, '').match(/\d{5,12}/); if (n) d.num_id = n[0]; if (/C\.?\s?E\.?|EXTRANJERIA/.test(QUITA(v))) d.tipo_id = 'C.E.'; const ex = QUITA(v).match(/ DE ([A-Z ]+)$/); if (ex && !d.expedicion) d.expedicion = bonito(ex[1]); continue; }
+      if (/EXPEDICION|EXPEDIDA/.test(k)) { d.expedicion = bonito(v.replace(/\b\d{1,2}[/.-]\d{1,2}[/.-]\d{4}\b/, '').replace(/^\s*DE\s+/i, '')); continue; }
+      if (/FECHA DE NACIMIENTO|NACIMIENTO$|^NACIDO/.test(k) && /\d/.test(v)) { d.fecha_nac = aFecha(v); continue; }
       if (/LUGAR DE NACIMIENTO/.test(k)) { d.lugar_nac = bonito(v); continue; }
       if (/ESTADO CIVIL/.test(k)) { const t = QUITA(v); d.estado_civil = /CASAD/.test(t) ? 'Casado(a)' : /UNION/.test(t) ? 'Unión libre' : /SEPARAD/.test(t) ? 'Separado(a)' : /DIVORC/.test(t) ? 'Divorciado(a)' : /VIUD/.test(t) ? 'Viudo(a)' : 'Soltero(a)'; continue; }
-      if (/CELULAR|TELEFONO|MOVIL/.test(k) && !d.celular) { d.celular = v.replace(/[^0-9]/g, '').slice(0, 10); continue; }
+      if (/CELULAR|TELEFONO|MOVIL|CONTACTO/.test(k) && !d.celular) { d.celular = v.replace(/[^0-9]/g, '').slice(0, 10); continue; }
       if (/CORREO|E-?MAIL/.test(k)) { d.correo = v.trim().toLowerCase(); continue; }
-      if (/DIRECCION/.test(k)) { d.direccion = bonito(v); continue; }
+      if (/DIRECCION|RESIDENCIA|DOMICILIO/.test(k)) { d.direccion = bonito(v); continue; }
       if (/BARRIO/.test(k)) { d.barrio = bonito(v); continue; }
+      if (/^SEXO|GENERO/.test(k)) { d.genero = /^F|MUJER/.test(QUITA(v)) ? 'f' : 'm'; continue; }
     }
   }
   cierraExp(); cierraRef();
   // sin etiquetas de nombre: la primera línea suele ser el nombre completo
   if (!d.nombres) {
-    const cab = pars.find(p => !p.includes(':') && /^[A-Za-zÁÉÍÓÚÑáéíóúñ ]{6,60}$/.test(p) && !/HOJA DE VIDA|CURRICULUM/.test(QUITA(p)));
+    const cab = pars.find(p => !p.includes(':') && /^[A-Za-zÁÉÍÓÚÑáéíóúñ ]{6,60}$/.test(p) && !/HOJA DE VIDA|CURRICULUM|DATOS|PERFIL/.test(QUITA(p)) && !esSec(QUITA(p)));
     if (cab) { const w = bonito(cab).split(' '); d.apellidos = w.length > 2 ? w.slice(-2).join(' ') : w.slice(1).join(' '); d.nombres = w.slice(0, w.length > 2 ? -2 : 1).join(' '); }
   }
-  if (!d.num_id) { const m = pars.join(' ').replace(/\./g, '').match(/C\s?C\s*(?:N[º°o.]?\s*)?(\d{6,12})/i); if (m) d.num_id = m[1]; }
+  if (!d.num_id) { const m = pars.join(' ').replace(/(\d)[.,\s](?=\d)/g, '$1').match(/(?:C\.?\s?C\.?|C[EÉ]DULA|IDENTIFICACI[OÓ]N|DOCUMENTO)\s*(?:DE CIUDADAN[IÍ]A)?\s*(?:N[º°o.]*\s*)?:?\s*(\d{6,12})/i); if (m) d.num_id = m[1]; }
+  if (!d.celular && celSuelto) d.celular = celSuelto;
+  if (!d.correo && correoSuelto) d.correo = correoSuelto;
   if (!d.tipo_id) d.tipo_id = 'C.C.';
-  if (!d.genero) d.genero = 'm';
-  hv.ref_fam = (hv.ref_fam.concat([{}, {}])).slice(0, 2); hv.ref_per = (hv.ref_per.concat([{}, {}])).slice(0, 2);
+  if (!d.genero) { const n1 = QUITA((d.nombres || '').split(' ')[0]); d.genero = /A$/.test(n1) && !/^(LUCA|JOSUA|NICOLA|ELIAS|ISAIA|MATIA|JONATHA)/.test(n1) || /^(MARIA|LUZ|ISABEL|RAQUEL|INES|ROCIO|BEATRIZ|MERCEDES|CARMEN|SOL|NOHEMI|YANETH|JANETH|LIZETH|ESTHER|RUTH|MIRIAM|LOURDES|DOLORES|PILAR|CONSUELO|INGRID|MARIBEL|YAMILE|NELLY|DEISY|LEIDY|ARLETH|NAYIBE|YURANI|YULIETH)$/.test(n1) ? 'f' : 'm'; }
+  // sin repetidos (mismo sitio y mismas fechas)
+  const unico = (arr, clave) => arr.filter((x, i) => arr.findIndex(y => clave(y) === clave(x)) === i);
+  hv.experiencias.forEach(x => { if (x.fin && x.ingreso && x.fin < x.ingreso) x.fin = ''; });
+  hv.experiencias = unico(hv.experiencias.filter(x => x.empresa), x => QUITA(x.empresa) + x.ingreso + x.fin);
+  hv.estudios = unico(hv.estudios.filter(x => x.inst || x.titulo), x => QUITA(x.inst + x.titulo) + x.fin);
+  hv.ref_fam = (hv.ref_fam.concat([{}, {}])).slice(0, Math.max(2, hv.ref_fam.length)); hv.ref_per = (hv.ref_per.concat([{}, {}])).slice(0, Math.max(2, hv.ref_per.length));
+  return { d, hv };
+}
+const textoP = p => p.replace(/<w:tab\/>/g, '\t').replace(/<w:br[^>]*\/>/g, '\n').replace(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g, '\u0001$1\u0002').replace(/<[^>]+>/g, '').replace(/\u0001|\u0002/g, '')
+  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/[  ]+/g, ' ').trim();
+function lineasDocx(xml) {
+  xml = xml.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g, ''); // los cuadros de texto vienen repetidos
+  const out = [], esEtq = c => ETQ_SOLA.test(QL(c).replace(/[:.\s]+$/, '').trim());
+  for (const parte of xml.split(/(<w:tbl>[\s\S]*?<\/w:tbl>)/)) {
+    if (!parte.startsWith('<w:tbl>')) { (parte.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || []).map(textoP).filter(Boolean).forEach(l => out.push(l)); continue; }
+    // tablas: si la primera fila son títulos (Institución | Título | Año) cada celda sale como "Título: valor"
+    const filas = (parte.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) || []).map(tr => (tr.match(/<w:tc[ >][\s\S]*?<\/w:tc>/g) || []).map(tc => (tc.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || []).map(textoP).filter(Boolean).join('\n')));
+    let cab = null;
+    for (const f of filas) {
+      const llenas = f.filter(Boolean);
+      if (llenas.length >= 2 && llenas.every(esEtq)) { cab = f; continue; }
+      if (cab) { f.forEach((c, j) => { if (c && cab[j]) out.push(cab[j].replace(/[:\s]+$/, '') + ': ' + c.replace(/\n/g, ' ')); }); continue; }
+      if (llenas.length === 2 && esEtq(llenas[0])) { out.push(llenas[0].replace(/[:\s]+$/, '') + ': ' + llenas[1].replace(/\n/g, ' ')); continue; }
+      f.forEach(c => c && c.split('\n').forEach(l => out.push(l)));
+    }
+  }
+  return out;
+}
+async function leer(file) {
+  const z = await unzip(await file.arrayBuffer());
+  const xml = new TextDecoder().decode(await z.saca('word/document.xml') || new Uint8Array());
+  if (!xml) throw new Error('no encontré el texto del documento');
+  const r = parsear(lineasDocx(xml));
   // la foto que puso nuestro sistema en la hoja de vida
   const fz = await z.saca('word/media/foto_hv.jpeg');
-  if (fz && fz.length < 600000) { let s = ''; for (let i = 0; i < fz.length; i += 8192) s += String.fromCharCode.apply(null, fz.subarray(i, i + 8192)); d.foto = btoa(s); }
-  return { d, hv };
+  if (fz && fz.length < 600000) { let s = ''; for (let i = 0; i < fz.length; i += 8192) s += String.fromCharCode.apply(null, fz.subarray(i, i + 8192)); r.d.foto = btoa(s); }
+  return r;
 }
 
 // imágenes pegadas dentro del Word (cédula, diplomas, certificados…)
@@ -274,5 +397,6 @@ async function imagenes(file) {
   }
   return out;
 }
-window.HVD = { ats, moderna, leer, imagenes };
+async function textoWord(file) { const z = await unzip(await file.arrayBuffer()); return lineasDocx(new TextDecoder().decode(await z.saca('word/document.xml') || new Uint8Array())); }
+window.HVD = { ats, moderna, leer, imagenes, parsear, fechasDe, parecido, textoWord };
 })();
