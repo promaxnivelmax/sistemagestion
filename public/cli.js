@@ -188,7 +188,7 @@ function ficha(ir) {
       <div class="cli-tabs"><button data-modo="hv" class="${modo === 'hv' ? 'on' : ''}"><i class="ti">📄 </i>HV</button><button data-modo="docs" class="${modo === 'docs' ? 'on' : ''}"><i class="ti">📑 </i>Documentos</button><button data-modo="cobros" class="${modo === 'cobros' ? 'on' : ''}"><i class="ti">🧾 </i>Cobros</button><button data-modo="tram" class="${modo === 'tram' ? 'on' : ''}"><i class="ti">🔗 </i>Trámites</button></div></div>`;
   const secHV = `<div class="card" id="secHV"><div class="row"><h3 class="grow cli-h">📄 Hojas de vida</h3><button class="btn chico" id="nuevaHV">＋ Nueva</button></div>
       ${d.hvs.length ? d.hvs.map((h, n) => `<div class="cli-hv"><div class="cli-hv-d"><b>${esc(h.titulo || 'Hoja de vida ' + (n + 1))}</b><span class="muted">${(h.estudios || []).length} estudio(s) · ${(h.experiencias || []).length ? (h.experiencias || []).length + ' experiencia(s)' : 'sin experiencia'}</span></div>
-          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}" title="La hoja de vida de siempre">⬇️ Word</button><button class="btn sec" data-hvd="ats:${h.id}" title="Diseño sencillo que leen los sistemas de las empresas">ATS</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
+          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}" title="La hoja de vida de siempre">⬇️ Word</button><button class="btn sec" data-hvd="ats:${h.id}" title="Diseño sencillo que leen los sistemas de las empresas">ATS</button><button class="btn sec" data-hvsop="${h.id}" title="Leer cédula, diplomas y certificados (fotos, PDF o el Word con imágenes) y llenar fechas y datos">📎 Soportes</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
         : '<p class="muted" style="margin:8px 0 0">Todavía no tiene hoja de vida. Toca "＋ Nueva".</p>'}</div>`;
   const secDocs = `<div class="card" id="secDocs"><h3 class="cli-h">📑 Documentos</h3><p class="muted cli-sub">Se abre con sus datos puestos para revisar y completar.</p>
       <div class="cli-docs">${Object.entries(DOCS).map(([k, x]) => `<button class="cli-doc" data-doc="${k}"><span>${x.e}</span>${esc(x.t)}</button>`).join('')}</div></div>`;
@@ -203,6 +203,7 @@ function ficha(ir) {
   if (nv) nv.onclick = () => { const h = nuevaHV(d.hvs.length ? 'Hoja de vida ' + (d.hvs.length + 1) : 'Principal'); asistenteHV(h, true); };
   mainEl.querySelectorAll('[data-hved]').forEach(b => b.onclick = () => asistenteHV(JSON.parse(JSON.stringify(d.hvs.find(h => h.id === b.dataset.hved))), false));
   mainEl.querySelectorAll('[data-hvw]').forEach(b => b.onclick = () => wordHV(d.hvs.find(h => h.id === b.dataset.hvw), b));
+  mainEl.querySelectorAll('[data-hvsop]').forEach(b => b.onclick = () => leerSoportesHV(d.hvs.find(h => h.id === b.dataset.hvsop), b));
   mainEl.querySelectorAll('[data-hvd]').forEach(b => b.onclick = () => { const [tipo, id] = b.dataset.hvd.split(':'); disenoHV(d.hvs.find(h => h.id === id), tipo); });
   mainEl.querySelectorAll('[data-hvdup]').forEach(b => b.onclick = async () => {
     const h = JSON.parse(JSON.stringify(d.hvs.find(x => x.id === b.dataset.hvdup))); h.id = uid(); h.titulo = (h.titulo || 'Hoja de vida') + ' (copia)';
@@ -267,6 +268,29 @@ function montarTramites(d) {
     mainEl.querySelectorAll('.tp-g').forEach(g => { let n = 0; g.querySelectorAll('a').forEach(a => { const ok = !q || a.dataset.t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(q); a.style.display = ok ? '' : 'none'; if (ok) n++; }); g.style.display = n ? '' : 'none'; }); };
 }
 
+/* ---------- soportes: cédula, diplomas y certificados en foto, PDF o Word ---------- */
+function cargarOCR() { return window.OCR ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/ocr.js?v=1'; s.onload = ok; s.onerror = () => no(new Error('no cargó el lector')); document.head.appendChild(s); }); }
+function avisoSoportes(items) {
+  const { esc } = C(); const n = document.createElement('div'); n.className = 'note ok cli-aviso';
+  n.innerHTML = `<b>📷 Leí de los soportes</b> <span class="muted">(revisa que esté bien)</span><br>${items.map(esc).join('<br>')}`;
+  mainEl.prepend(n); setTimeout(() => n.remove(), 30000);
+}
+function leerSoportesHV(h, btn) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = 'image/*,application/pdf,.pdf,.docx';
+  inp.onchange = async () => {
+    const files = [...inp.files]; if (!files.length || !h) return;
+    const txt = btn.textContent; btn.disabled = true; btn.textContent = '⏳';
+    try {
+      await cargarOCR();
+      const r = await window.OCR.leerSoportes(files, cli.data, h, m => C().toast('📷 ' + m));
+      if (!r.hechos.length) { C().toast('No encontré datos claros en esos soportes. Prueba con una foto más nítida y derecha.', true); }
+      else { await guardarCli(); ficha('hv'); avisoSoportes(r.hechos); arriba(); }
+    } catch (e) { C().toast('No pude leer los soportes: ' + e.message, true); }
+    btn.disabled = false; btn.textContent = txt;
+  };
+  inp.click();
+}
+
 /* ---------- subir una hoja de vida en Word: lee los datos y llena el formulario ---------- */
 function subirHV() {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -275,8 +299,11 @@ function subirHV() {
     if (!/\.docx$/i.test(f.name)) return C().toast('Solo Word nuevo (.docx). Si es .doc, ábrelo en Word y guárdalo como .docx', true);
     C().toast('Leyendo la hoja de vida…');
     let r; try { r = await window.HVD.leer(f); } catch (e) { return C().toast('No pude leer ese Word: ' + e.message, true); }
-    if (!V(r.d.nombres) && !V(r.d.num_id)) return C().toast('No encontré nombre ni cédula en ese Word. Llénala a mano con ＋ Nuevo.', true);
     const h = Object.assign(nuevaHV('Importada'), r.hv);
+    let hechos = [];
+    try { if ((await window.HVD.imagenes(f)).length) { await cargarOCR(); hechos = (await window.OCR.leerSoportes([f], r.d, h, m => C().toast('📷 Soportes: ' + m))).hechos; } } catch (e) { C().toast('No pude leer las imágenes: ' + e.message, true); }
+    if (!V(r.d.nombres) && !V(r.d.num_id)) return C().toast('No encontré nombre ni cédula en ese Word. Llénala a mano con ＋ Nuevo.', true);
+    if (hechos.length) setTimeout(() => avisoSoportes(hechos), 300);
     // si la cédula ya existe, se agrega como otra hoja de vida de esa persona (no se borra nada)
     let ex = null;
     if (V(r.d.num_id)) { try { ex = (await C().rpc('cj_clientes_buscar', { p_token: C().S.token, p_q: r.d.num_id })).find(c => c.cedula === r.d.num_id.replace(/[^0-9A-Za-z]/g, '')); } catch (e) {} }
