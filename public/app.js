@@ -2,11 +2,22 @@
 (function () {
 'use strict';
 const LOCAL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+// dos negocios con el mismo sistema: cada uno con su plata y sus cuentas aparte; los clientes son de ambos
+const NEG = (() => {
+  let k = /^laura\./.test(location.hostname) ? 'laura' : '';
+  if (LOCAL) { const q = new URLSearchParams(location.search).get('negocio'); try { if (q != null) localStorage.setItem('negocio', q); k = localStorage.getItem('negocio') || k; } catch (e) {} }
+  return k === 'laura'
+    ? { id: 'laura', nombre: 'Trámites y Servicios Laura', logo: 'TL', pre: 'tl_', bonos: false, dueno: 'Sandra', tutorial: true, otro: 'Internet La 52' }
+    : { id: '52', nombre: 'Internet La 52', logo: '52', pre: '', bonos: true, dueno: 'Iván', tutorial: false, otro: 'Trámites y Servicios Laura' };
+})();
+window.NEG = NEG;
+document.title = NEG.nombre + ' · Caja';
+if (NEG.id !== '52') { const ic = document.querySelector('link[rel=icon]'); const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#ffc21a" stroke="#10262b" stroke-width="4"/><path d="M6 42c6-4 11-4 17 0s11 4 17 0 11-4 18 0v6a30 30 0 0 1-52 0z" fill="#0d7c86" stroke="#10262b" stroke-width="3" stroke-linejoin="round"/><text x="32" y="36" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="900" font-size="20" fill="#10262b">${NEG.logo}</text></svg>`; if (ic) ic.href = 'data:image/svg+xml,' + encodeURIComponent(svg); }
 const SB = LOCAL ? '/rest/v1' : 'https://sbuyguoxwgpzsqtyhjaf.supabase.co/rest/v1';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNidXlndW94d2dwenNxdHloamFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1OTEzODUsImV4cCI6MjA5NjE2NzM4NX0.YqZtDO1dBktJQ7Nu-AEBRWIoMGzDZISdcD5x-8z4U_U';
 const app = document.getElementById('app');
-const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#ffc21a" stroke="#10262b" stroke-width="4"/><path d="M6 42c6-4 11-4 17 0s11 4 17 0 11-4 18 0v6a30 30 0 0 1-52 0z" fill="#0d7c86" stroke="#10262b" stroke-width="3" stroke-linejoin="round"/><text x="32" y="36" text-anchor="middle" font-family="Lilita One,system-ui,sans-serif" font-size="24" fill="#10262b">52</text></svg>`;
-const marca = sub => `<span class="logo">${LOGO}<span>Internet La 52${sub ? `<small>${sub}</small>` : ''}</span></span>`;
+const LOGO = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#ffc21a" stroke="#10262b" stroke-width="4"/><path d="M6 42c6-4 11-4 17 0s11 4 17 0 11-4 18 0v6a30 30 0 0 1-52 0z" fill="#0d7c86" stroke="#10262b" stroke-width="3" stroke-linejoin="round"/><text x="32" y="36" text-anchor="middle" font-family="Lilita One,system-ui,sans-serif" font-size="${NEG.logo.length > 2 ? 18 : 22}" fill="#10262b">${NEG.logo}</text></svg>`;
+const marca = sub => `<span class="logo">${LOGO}<span>${NEG.nombre}${sub ? `<small>${sub}</small>` : ''}</span></span>`;
 
 
 /* ---------- utilidades ---------- */
@@ -19,7 +30,7 @@ const DIA = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const dt = iso => new Date(iso + 'T12:00:00Z');
 const addDays = (iso, n) => { const d = dt(iso); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const fFecha = iso => { const d = dt(iso); return `${DIA[d.getUTCDay()]} ${d.getUTCDate()} ${MES[d.getUTCMonth()]}`; };
-const TIPOS = { venta: 'Venta', gasto: 'Gasto', retiro: 'Retiro Iván', cambio: 'Cambio', ingreso: 'Entrada' };
+const TIPOS = { venta: 'Venta', gasto: 'Gasto', retiro: 'Retiro ' + NEG.dueno, cambio: 'Cambio', ingreso: 'Entrada' };
 const MEDIOS = [['Efectivo', '💵 Efectivo'], ['Nequi', '📱 Nequi'], ['Llave', '🔑 Llave (Nu)']];
 const MED = { Efectivo: 'Efectivo', Nequi: 'Nequi', Llave: 'Llave Bre-B (Nu)' };
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
@@ -34,7 +45,7 @@ const store = {
 async function rpc(fn, args) {
   let r;
   try {
-    r = await fetch(SB + '/rpc/' + fn, {
+    r = await fetch(SB + '/rpc/' + NEG.pre + fn, {
       method: 'POST',
       headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify(args || {}),
@@ -130,13 +141,13 @@ async function pantallaLogin() {
     return;
   }
   const box = document.getElementById('us');
-  box.innerHTML = us.map(u => `<button data-u="${esc(u.id)}">${esc(u.nombre)}</button>`).join('');
-  box.onclick = e => { const b = e.target.closest('[data-u]'); if (b) pedirPin(b.dataset.u, b.textContent); };
+  box.innerHTML = us.map(u => `<button data-u="${esc(u.id)}"${u.nuevo ? ' data-nuevo="1"' : ''}>${esc(u.nombre)}</button>`).join('');
+  box.onclick = e => { const b = e.target.closest('[data-u]'); if (b) pedirPin(b.dataset.u, b.textContent, !!b.dataset.nuevo); };
 }
 
-function pedirPin(id, nombre) {
-  let pin = '';
-  app.innerHTML = `<div class="login"><h1>${marca('Caja')}</h1><p style="font-size:20px;color:var(--tx);font-weight:800">Hola, ${esc(nombre)}</p><p>Escribe tu clave</p>
+function pedirPin(id, nombre, nuevo) {
+  let pin = '', primera = '';
+  app.innerHTML = `<div class="login"><h1>${marca('Caja')}</h1><p style="font-size:20px;color:var(--tx);font-weight:800">${nuevo ? '¡Bienvenida' + (/a$/i.test(nombre) ? '' : 'o') + ', ' : 'Hola, '}${esc(nombre)}${nuevo ? '!' : ''}</p><p id="pmsg">${nuevo ? 'Es tu primera vez: <b>crea tu clave</b> de 4 a 6 números' : 'Escribe tu clave'}</p>
     <div class="pin-dots" id="dots"></div>
     <div class="note bad hide" id="perr"></div>
     <div class="keypad" id="kp">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-k="${n}">${n}</button>`).join('')}
@@ -148,9 +159,11 @@ function pedirPin(id, nombre) {
   let enviando = false;
   const enviar = async () => {
     if (enviando || pin.length < 4) return;
+    if (nuevo && !primera) { primera = pin; pin = ''; pinta(); document.getElementById('pmsg').innerHTML = 'Escríbela <b>otra vez</b> para confirmar'; return; }
+    if (nuevo && primera !== pin) { primera = ''; pin = ''; pinta(); document.getElementById('pmsg').innerHTML = 'Crea tu clave de 4 a 6 números'; err.textContent = 'No coincidieron. Empecemos de nuevo.'; err.classList.remove('hide'); return; }
     enviando = true;
     try {
-      const r = await rpc('cj_login', { p_usuario: id, p_pin: pin });
+      const r = nuevo ? await rpc('cj_primer_pin', { p_usuario: id, p_pin: pin }) : await rpc('cj_login', { p_usuario: id, p_pin: pin });
       S.token = r.token; S.yo = r; store.set('caja_s', { token: r.token });
       S.tab = 'hoy'; S.f = nuevoForm();
       ola('¡Hola, ' + nombre + '!', '☀️'); // la animación va encima mientras la caja carga (no hace esperar)
@@ -192,7 +205,43 @@ async function principal() {
   if (esAdmin() && S.ev == null) { try { const ev = await rpc('cj_eventos_desde', { p_token: S.token, p_desde: 0 }); S.act = ev.slice(-40); S.ev = ev.length ? ev[ev.length - 1].id : 0; } catch (e) { S.act = []; S.ev = 0; } }
   latido();
   S.poll = setInterval(latido, 4000);
+  if (NEG.tutorial && !store.get('tuto_' + S.yo.id)) setTimeout(() => guia(), 900);
 }
+
+/* ---------- guía de la primera vez (Trámites y Servicios Laura) ---------- */
+const GUIA = () => [
+  { e: '👋', t: '¡Bienvenida a tu caja!', x: `Aquí llevas todo lo de <b>${NEG.nombre}</b>: ventas, gastos, la caja del día, tus clientes y tus finanzas. Tus cuentas y tu plata van <b>aparte</b> de ${NEG.otro}. Te muestro cómo funciona en un minuto.` },
+  { e: '☀️', t: 'Hoy: abre la caja', x: 'Cada mañana empiezas <b>abriendo la caja</b> con la base (la plata con la que arrancas el día). Sin abrir la caja no se pueden registrar ventas.', sel: '[data-tab=hoy]' },
+  { e: '💵', t: 'Registra cada venta', x: 'Toca el <b>servicio</b>, escribe el <b>valor</b> y cómo pagaron: <b>efectivo, Nequi o llave</b>. Luego Guardar. Así sabes cuánto has vendido y cuánto debe haber en el cajón.', sel: '[data-t=venta]' },
+  { e: '💸', t: 'Todo lo que sale, se anota', x: '<b>Gasto</b>: almuerzo, compras, pagos. <b>Retiro</b>: la plata que te llevas. <b>Cambio</b>: cuando alguien cambia efectivo por Nequi o al revés. <b>Entrada</b>: plata que llega y no es venta.', sel: '[data-t=gasto]' },
+  { e: '🔒', t: 'Cierra la caja', x: 'Al final del día cuentas la plata del cajón y <b>cierras la caja</b>. El sistema te dice si cuadró, si sobró o si faltó.' },
+  { e: '👥', t: 'Clientes (compartidos)', x: `Los clientes son los mismos de ${NEG.otro}: si alguien ya fue atendido allá, aquí lo encuentras con su <b>hoja de vida, documentos y cuentas de cobro</b>, y lo que hagas aquí también se ve allá. Solo los clientes se comparten; la plata no.`, sel: '[data-tab=cli]' },
+  { e: '📄', t: 'Hojas de vida y documentos', x: 'En cada cliente: <b>📄 HV</b> (Word y ATS), <b>📑 Documentos</b> (renuncia, referencias…), <b>🧾 Cobros</b> (cuentas de cobro con su numeración) y <b>🔗 Trámites</b> (copia la cédula y abre la página). Con <b>⬆️ Subir HV</b> cargas un Word, PDF o foto y se llena solo.', sel: '[data-tab=cli]' },
+  { e: '📊', t: 'Reportes', x: 'Cuánto vendiste por día, semana o mes, lo que más se vende, los gastos y cómo cuadraron los cierres.', sel: '[data-tab=rep]' },
+  { e: '🏦', t: 'Tus finanzas', x: 'Agrega <b>tus bancos y cuentas</b> (Nequi, Bancolombia, lo que tengas), tu <b>plata ahorrada</b>, lo que <b>debes</b> y tus <b>gastos fijos</b>. Empieza por ⚙️ Configurar; tú eliges qué agregar.', sel: '[data-tab=fz]' },
+  { e: '🕘', t: 'Historial', x: 'Todo lo registrado, con buscador. Si algo quedó mal, lo corriges o lo anulas: nada se borra.', sel: '[data-tab=hist]' },
+  { e: '⚙️', t: 'Ajustes', x: 'Aquí cambias los <b>servicios que vendes</b>, los <b>tipos de gasto</b> y <b>tu clave</b>.', sel: '[data-tab=aj]' },
+  { e: '🎉', t: '¡Lista!', x: 'Si quieres ver esta guía otra vez, está en <b>Ajustes → 📘 Ver la guía</b>. ¡Buenas ventas!' },
+];
+function guia(desde = 0) {
+  const pasos = GUIA(); let i = desde;
+  const fondo = document.createElement('div'); fondo.className = 'guia'; document.body.appendChild(fondo);
+  const cerrar = () => { fondo.remove(); window.removeEventListener('resize', pinta); store.set('tuto_' + S.yo.id, 1); };
+  function pinta() {
+    const p = pasos[i], el = p.sel && document.querySelector(p.sel);
+    let foco = '';
+    if (el) { el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); foco = `<div class="guia-foco" style="left:${r.left - 6}px;top:${r.top - 6}px;width:${r.width + 12}px;height:${r.height + 12}px"></div>`; }
+    fondo.innerHTML = `${foco || '<div class="guia-velo"></div>'}<div class="guia-card" role="dialog" aria-live="polite"><div class="guia-e">${p.e}</div><h2>${p.t}</h2><p>${p.x}</p>
+      <div class="guia-dots">${pasos.map((_, j) => `<i class="${j === i ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="row" style="margin-top:12px">${i ? '<button class="btn sec" data-g="atras">← Atrás</button>' : '<button class="lnk" data-g="saltar">Saltar guía</button>'}<span class="grow"></span><button class="btn" data-g="sig">${i === pasos.length - 1 ? 'Empezar ✓' : 'Siguiente →'}</button></div></div>`;
+    fondo.querySelector('[data-g=sig]').onclick = () => { if (i === pasos.length - 1) return cerrar(); i++; pinta(); };
+    const at = fondo.querySelector('[data-g=atras]'); if (at) at.onclick = () => { i--; pinta(); };
+    const sa = fondo.querySelector('[data-g=saltar]'); if (sa) sa.onclick = cerrar;
+  }
+  window.addEventListener('resize', pinta);
+  pinta();
+}
+window.GUIA_VER = () => guia(0);
 
 function pintarMarco() {
   const tabs = esAdmin() ? [['hoy', 'Hoy'], ['cli', 'Clientes'], ['rep', 'Reportes'], ['fz', 'Finanzas'], ['hist', 'Historial'], ['aj', 'Ajustes']] : [['hoy', 'Hoy'], ['cli', '👥 Clientes']];
@@ -243,7 +292,7 @@ function pintarHoy() {
     };
   } else if (c.cerrada) {
     box.innerHTML = `<div class="card"><h2>🔒 La caja de hoy ya se cerró</h2>${resultadoCierre(c)}
-      ${esAdmin() ? '<button class="btn sec full" id="reabrir">Reabrir la caja de hoy</button>' : '<p class="muted" style="margin-top:8px">Si falta registrar algo, pídele a Iván que la reabra.</p>'}</div>`;
+      ${esAdmin() ? '<button class="btn sec full" id="reabrir">Reabrir la caja de hoy</button>' : '<p class="muted" style="margin-top:8px">Si falta registrar algo, pídele a ' + (NEG.dueno === 'Iván' ? 'Iván' : 'la administradora') + ' que la reabra.</p>'}</div>`;
     const rb = document.getElementById('reabrir');
     if (rb) rb.onclick = async () => { if (!confirmar('¿Reabrir la caja de hoy? Se borra el conteo del cierre.')) return; try { await rpc('cj_reabrir_caja', { p_token: S.token, p_fecha: E.hoy }); await refrescarHoy(); } catch (e) { toast(e.message, true); } };
   } else {
@@ -279,7 +328,7 @@ function pintarHoy() {
     const b = E.mi_bono;
     res.innerHTML = `<div class="stats" style="margin-top:12px">
       ${stat('Hoy llevas', fmt(E.mio.ventas), E.mio.n + (E.mio.n === 1 ? ' venta' : ' ventas'))}
-      ${b ? stat('Tu puesto esta semana', b.puesto + '°', b.puesto <= 2 && b.ventas > 0 ? 'Bono estimado ' + fmt(b.bono) + ' 🎉' : 'Los 2 primeros ganan 3,5% de bono') : ''}</div>`;
+      ${b && NEG.bonos ? stat('Tu puesto esta semana', b.puesto + '°', b.puesto <= 2 && b.ventas > 0 ? 'Bono estimado ' + fmt(b.bono) + ' 🎉' : 'Los 2 primeros ganan 3,5% de bono') : ''}</div>`;
   }
 
   // salidas del día (gastos y retiros): siempre visibles
@@ -287,7 +336,7 @@ function pintarHoy() {
   const salM = porMedio(E.movs, m => m.tipo === 'gasto' || m.tipo === 'retiro');
   const salTxt = Object.entries(salM).filter(([, v]) => v).map(([k, v]) => `${{ Efectivo: '💵', Nequi: '📱', Llave: '🔑' }[k] || ''} ${fmt(v)}`).join(' · ');
   if (c && !c.cerrada) res.insertAdjacentHTML('beforeend', `<div class="note ${sal.length ? 'info' : 'warn'} salidas" style="margin-top:10px">💸 <b>Salidas de hoy:</b> ${sal.length ? `${sal.length} (${fmt(sal.reduce((a, x) => a + x.monto, 0))})${salTxt ? ' → ' + salTxt : ''}` : 'ninguna registrada'}.
-    ¿Salió plata del cajón (almuerzo, compras, pagos)? <button class="lnk" data-go="gasto">Registrar gasto</button> · <button class="lnk" data-go="retiro">Retiro de Iván</button></div>`);
+    ¿Salió plata del cajón (almuerzo, compras, pagos)? <button class="lnk" data-go="gasto">Registrar gasto</button> · <button class="lnk" data-go="retiro">Retiro de ${NEG.dueno}</button></div>`);
   res.querySelectorAll('[data-go]').forEach(b => b.onclick = () => irA(b.dataset.go));
 
   // movimientos
@@ -354,7 +403,7 @@ function filaMov(m, hoy) {
 }
 
 /* ---------- formulario de registro ---------- */
-const TXT_BTN = { venta: 'Guardar venta', gasto: 'Guardar gasto', retiro: 'Guardar retiro de Iván', cambio: 'Guardar cambio', ingreso: 'Guardar entrada' };
+const TXT_BTN = { venta: 'Guardar venta', gasto: 'Guardar gasto', retiro: 'Guardar retiro de ' + NEG.dueno, cambio: 'Guardar cambio', ingreso: 'Guardar entrada' };
 const TECLA_TIPO = { v: 'venta', g: 'gasto', r: 'retiro', c: 'cambio', i: 'ingreso' };
 const TECLA_MEDIO = { e: 'Efectivo', n: 'Nequi', l: 'Llave' };
 
@@ -373,8 +422,8 @@ function pintarForm() {
     cuerpo += `<span class="lbl">${f.tipo === 'venta' ? '¿Qué vendiste?' : '¿En qué se gastó?'}</span>
       <div class="chips" id="cats">${lista.map(n => `<button type="button" class="chip ${f.cat === n ? 'on' : ''}" data-cat="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
   }
-  if (f.tipo === 'retiro') cuerpo += `<p class="muted" style="margin-top:10px">La plata que <b>se lleva Iván</b> de la caja. Cuenta como su sueldo.</p>`;
-  if (f.tipo === 'ingreso') cuerpo += `<p class="muted" style="margin-top:10px">Plata que <b>llega y no es una venta</b>: te mandaron a la llave o a Nequi, te devolvieron un préstamo, etc. No cuenta como venta ni para los bonos.</p>`;
+  if (f.tipo === 'retiro') cuerpo += `<p class="muted" style="margin-top:10px">La plata que <b>se lleva ${NEG.dueno}</b> de la caja. Cuenta como su sueldo.</p>`;
+  if (f.tipo === 'ingreso') cuerpo += `<p class="muted" style="margin-top:10px">Plata que <b>llega y no es una venta</b>: te mandaron a la llave o a Nequi, te devolvieron un préstamo, etc. No cuenta como venta${NEG.bonos ? ' ni para los bonos' : ''}.</p>`;
   if (f.tipo === 'cambio') cuerpo += `<span class="lbl">¿Qué recibiste?</span>${segMedios('rec', f.rec)}
       <span class="lbl">¿Qué entregaste?</span>${segMedios('ent', f.ent, f.rec)}`;
   cuerpo += `<span class="lbl">Valor</span><input class="inp money" id="monto" inputmode="numeric" autocomplete="off" placeholder="$0" value="${f.monto ? f.monto.toLocaleString('es-CO') : ''}">
@@ -385,7 +434,7 @@ function pintarForm() {
   box.innerHTML = `<div class="big-actions">
       <button type="button" class="act venta ${f.tipo === 'venta' ? 'on' : ''}" data-t="venta">＋ Venta<small>entra plata${PC() ? ' · tecla V' : ''}</small></button>
       <button type="button" class="act ${f.tipo === 'gasto' ? 'on' : ''}" data-t="gasto">− Gasto<small>almuerzo, papelería…${PC() ? ' · G' : ''}</small></button>
-      <button type="button" class="act ${f.tipo === 'retiro' ? 'on' : ''}" data-t="retiro">↑ Retiro Iván<small>plata que se lleva Iván${PC() ? ' · R' : ''}</small></button>
+      <button type="button" class="act ${f.tipo === 'retiro' ? 'on' : ''}" data-t="retiro">↑ Retiro ${NEG.dueno}<small>plata que se lleva ${NEG.dueno}${PC() ? ' · R' : ''}</small></button>
       <button type="button" class="act ${f.tipo === 'cambio' ? 'on' : ''}" data-t="cambio">⇄ Cambio<small>Nequi, llave ↔ efectivo${PC() ? ' · C' : ''}</small></button>
       <button type="button" class="act ${f.tipo === 'ingreso' ? 'on' : ''}" data-t="ingreso">↓ Entrada<small>llega plata, no es venta${PC() ? ' · I' : ''}</small></button></div>
     ${cuerpo}<button type="button" class="btn full ${f.tipo === 'venta' || f.tipo === 'ingreso' ? 'ok' : f.tipo === 'cambio' ? '' : 'bad'}" id="guardar">${TXT_BTN[f.tipo]}${PC() ? ' <small class="kbd">Enter</small>' : ''}</button>
@@ -456,7 +505,7 @@ async function guardar() {
   const btn = document.getElementById('guardar'); if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
   try {
     const medio = f.tipo === 'cambio' ? f.rec : f.medio;
-    const cat = f.tipo === 'cambio' ? 'Cambio' : f.tipo === 'retiro' ? 'Retiro Iván' : f.tipo === 'ingreso' ? 'Entrada' : f.cat;
+    const cat = f.tipo === 'cambio' ? 'Cambio' : f.tipo === 'retiro' ? 'Retiro ' + NEG.dueno : f.tipo === 'ingreso' ? 'Entrada' : f.cat;
     const r = await rpc('cj_registrar_v2', { p_token: S.token, p_tipo: f.tipo, p_medio: medio, p_categoria: cat, p_monto: f.monto,
       p_nota: f.nota.trim(), p_sale: f.tipo === 'cambio' ? f.ent : null, p_cliente: f.uid });
     toast(r.repetido ? `Ya estaba guardado: ${TIPOS[r.tipo]} de ${fmt(r.monto)}` : `✓ ${TIPOS[r.tipo]} de ${fmt(r.monto)} guardado`);
@@ -509,10 +558,10 @@ function cerrarCaja() {
   const sal = (S.est && S.est.salidas) || [];
   const tot = sal.reduce((a, x) => a + x.monto, 0);
   modal(`<h3>🔒 Cerrar la caja · paso 1 de 2</h3>
-    <p class="muted">Antes de contar, revisa que <b>todo lo que salió del cajón hoy</b> esté registrado: almuerzos, compras, pagos, y lo que se llevó Iván.</p>
+    <p class="muted">Antes de contar, revisa que <b>todo lo que salió del cajón hoy</b> esté registrado: almuerzos, compras, pagos, y lo que se llevó ${NEG.dueno}.</p>
     <div class="card" style="margin:10px 0;padding:10px 12px">${sal.length ? `<table class="t">${sal.map(x => `<tr><td><span class="tag ${x.tipo}">${TIPOS[x.tipo]}</span> ${esc(x.categoria)}${x.nota ? ' · ' + esc(x.nota) : ''}<br><span class="muted">${esc(x.hora)} · ${esc(x.usuario)} · ${esc(MED[x.medio] || x.medio)}</span></td><td class="n neg">−${fmt(x.monto)}</td></tr>`).join('')}
       <tr><td><b>Total salidas</b></td><td class="n"><b>${fmt(tot)}</b></td></tr></table>` : '<p class="muted" style="margin:0">No hay salidas registradas hoy.</p>'}</div>
-    <div class="row" style="gap:8px"><button class="btn sec grow" id="addG">＋ Falta un gasto</button><button class="btn sec grow" id="addR">＋ Falta un retiro de Iván</button></div>
+    <div class="row" style="gap:8px"><button class="btn sec grow" id="addG">＋ Falta un gasto</button><button class="btn sec grow" id="addR">＋ Falta un retiro de ${NEG.dueno}</button></div>
     <label class="row confirma" style="margin-top:12px;align-items:flex-start"><input type="checkbox" id="okSal" style="width:22px;height:22px;flex-shrink:0">
       <span>${sal.length ? 'Confirmo que <b>todo</b> lo que salió hoy está registrado.' : 'Confirmo que hoy <b>no salió plata</b> del cajón.'}</span></label>
     <button class="btn full" id="sig" disabled>Siguiente: contar el efectivo →</button><button class="btn sec full" data-close>Cancelar</button>`, (b, close) => {
@@ -524,7 +573,7 @@ function cerrarCaja() {
       if (!ok.checked) return;
       b.innerHTML = `<h3>🔒 Cerrar la caja · paso 2 de 2</h3><p class="muted">Cuenta <b>todo el efectivo</b> que hay en el cajón (incluida la base) y escríbelo.</p>
         <input class="inp money" id="cont" inputmode="numeric" placeholder="$0" style="margin-top:12px">
-        <span class="lbl">Nota (opcional)</span><input class="inp" id="cnota" maxlength="300" placeholder="Algo que Iván deba saber">
+        <span class="lbl">Nota (opcional)</span><input class="inp" id="cnota" maxlength="300" placeholder="Algo que se deba saber">
         <button class="btn full" id="ok">Cerrar caja</button><button class="btn sec full" data-close>Cancelar</button>`;
       const cont = b.querySelector('#cont'); moneyInput(cont); setTimeout(() => cont.focus(), 30);
       const enviar = async ev => {
@@ -545,6 +594,7 @@ function cerrarCaja() {
 }
 
 function tablaBonos(lista, titulo) {
+  if (!NEG.bonos) return '';
   if (!lista || !lista.length) return '';
   return `<div class="card"><h2>🏆 ${titulo}</h2><table class="t"><tr><th>#</th><th>Empleado</th><th class="n">Ventas</th><th class="n">Bono 3,5%</th></tr>
     ${lista.map(b => `<tr><td>${b.puesto}</td><td>${esc(b.nombre)}</td><td class="n">${fmt(b.ventas)}</td><td class="n ${b.bono ? 'pos' : 'muted'}">${b.bono ? fmt(b.bono) : '—'}</td></tr>`).join('')}</table>
@@ -650,8 +700,10 @@ async function vistaAjustes(main) {
     <div class="card"><h2>🧾 Servicios que se venden</h2><p class="muted">Uno por línea, en el orden en que quieres verlos.</p>
       <textarea class="inp" id="cv" rows="8" style="margin-top:8px">${esc(S.est.cats.venta.join('\n'))}</textarea><button class="btn full" id="gcv">Guardar servicios</button></div>
     <div class="card"><h2>🧾 Tipos de gasto</h2><textarea class="inp" id="cg" rows="8">${esc(S.est.cats.gasto.join('\n'))}</textarea><button class="btn full" id="gcg">Guardar tipos de gasto</button></div>
-    <div class="card"><h2>🔑 Mi clave</h2><button class="btn sec full" id="mc">Cambiar mi clave</button></div>`;
+    <div class="card"><h2>🔑 Mi clave</h2><button class="btn sec full" id="mc">Cambiar mi clave</button></div>
+    ${NEG.tutorial ? '<div class="card"><h2>📘 Guía de uso</h2><p class="muted">El recorrido de la primera vez, paso a paso.</p><button class="btn sec full" id="verGuia" style="margin-top:8px">📘 Ver la guía</button></div>' : ''}`;
   main.querySelector('#mc').onclick = cambiarMiClave;
+  const vg = main.querySelector('#verGuia'); if (vg) vg.onclick = () => { S.tab = 'hoy'; pintarMarco(); setTimeout(() => guia(0), 300); };
   const gcat = async (tipo, el) => {
     const lista = el.value.split('\n').map(s => s.trim()).filter(Boolean);
     if (!lista.length) return toast('Deja al menos uno', true);
@@ -663,7 +715,7 @@ async function vistaAjustes(main) {
   let us = [];
   try { us = await rpc('cj_admin_usuarios', { p_token: S.token }); } catch (e) { toast(e.message, true); }
   const ul = main.querySelector('#ul');
-  ul.innerHTML = us.map(u => `<li><div class="d"><div>${esc(u.nombre)} ${u.activo ? '' : '<span class="tag">inactivo</span>'}</div><div>${u.rol === 'admin' ? 'Administrador' : 'Empleado'}${u.bono ? ' · participa en bonos' : ''}</div></div><button class="lnk" data-u="${esc(u.id)}">Editar</button></li>`).join('');
+  ul.innerHTML = us.map(u => `<li><div class="d"><div>${esc(u.nombre)} ${u.activo ? '' : '<span class="tag">inactivo</span>'}</div><div>${u.rol === 'admin' ? 'Administrador' : 'Empleado'}${u.bono && NEG.bonos ? ' · participa en bonos' : ''}</div></div><button class="lnk" data-u="${esc(u.id)}">Editar</button></li>`).join('');
   ul.onclick = e => { const b = e.target.closest('[data-u]'); if (b) editarUsuario(us.find(u => u.id === b.dataset.u)); };
 }
 
@@ -672,7 +724,7 @@ function editarUsuario(u) {
     <span class="lbl">Nombre</span><input class="inp" id="un" value="${esc(u.nombre)}" maxlength="30">
     <span class="lbl">Rol</span><select class="inp" id="ur"><option value="empleado" ${u.rol === 'empleado' ? 'selected' : ''}>Empleado (registra y cierra caja)</option><option value="admin" ${u.rol === 'admin' ? 'selected' : ''}>Administrador (ve todo)</option></select>
     <label class="row" style="margin-top:12px"><input type="checkbox" id="ua" ${u.activo ? 'checked' : ''}> Puede entrar al sistema</label>
-    <label class="row" style="margin-top:8px"><input type="checkbox" id="ub" ${u.bono ? 'checked' : ''}> Participa en los bonos</label>
+    <label class="row" style="margin-top:8px${NEG.bonos ? '' : ';display:none'}"><input type="checkbox" id="ub" ${u.bono && NEG.bonos ? 'checked' : ''}> Participa en los bonos</label>
     <span class="lbl">${u.id ? 'Clave nueva (déjalo vacío para no cambiarla)' : 'Clave (4 a 6 números)'}</span><input class="inp" id="up" inputmode="numeric" maxlength="6" autocomplete="off">
     <button class="btn full" id="ok">Guardar</button><button class="btn sec full" data-close>Cancelar</button>`, (b, close) => {
     b.querySelector('#ok').onclick = async () => {
@@ -743,7 +795,7 @@ function aviso(msg, hora) {
   let c = document.querySelector('.avisos'); if (!c) { c = document.createElement('div'); c.className = 'avisos'; document.body.appendChild(c); }
   const d = document.createElement('div'); d.className = 'aviso'; d.innerHTML = esc(msg) + (hora ? ' <small>' + esc(hora) + '</small>' : '');
   d.onclick = () => d.remove(); c.appendChild(d); setTimeout(() => d.remove(), 7000);
-  if (document.hidden && window.Notification && Notification.permission === 'granted') { try { new Notification('Caja La 52', { body: msg, tag: 'caja' + Date.now() }); } catch (e) {} }
+  if (document.hidden && window.Notification && Notification.permission === 'granted') { try { new Notification(NEG.nombre, { body: msg, tag: 'caja' + Date.now() }); } catch (e) {} }
 }
 const listaEnLinea = () => (S.enLinea || []).length ? S.enLinea.map(x => '<span class="tag on">🟢 ' + esc(x.nombre) + '</span>').join(' ') : '<span class="muted">Nadie más está conectado ahora.</span>';
 const listaAct = () => (S.act || []).length ? S.act.slice().reverse().map(e => '<li><div class="d"><div>' + esc(textoEv(e) || e.tipo) + '</div><div class="muted">' + esc(e.hora) + '</div></div></li>').join('') : '<li class="muted">Todavía no hay actividad hoy.</li>';

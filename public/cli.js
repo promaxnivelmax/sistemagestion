@@ -188,7 +188,7 @@ function ficha(ir) {
       <div class="cli-tabs"><button data-modo="hv" class="${modo === 'hv' ? 'on' : ''}"><i class="ti">📄 </i>HV</button><button data-modo="docs" class="${modo === 'docs' ? 'on' : ''}"><i class="ti">📑 </i>Documentos</button><button data-modo="cobros" class="${modo === 'cobros' ? 'on' : ''}"><i class="ti">🧾 </i>Cobros</button><button data-modo="tram" class="${modo === 'tram' ? 'on' : ''}"><i class="ti">🔗 </i>Trámites</button></div></div>`;
   const secHV = `<div class="card" id="secHV"><div class="row"><h3 class="grow cli-h">📄 Hojas de vida</h3><button class="btn chico" id="nuevaHV">＋ Nueva</button></div>
       ${d.hvs.length ? d.hvs.map((h, n) => `<div class="cli-hv"><div class="cli-hv-d"><b>${esc(h.titulo || 'Hoja de vida ' + (n + 1))}</b><span class="muted">${(h.estudios || []).length} estudio(s) · ${(h.experiencias || []).length ? (h.experiencias || []).length + ' experiencia(s)' : 'sin experiencia'}</span></div>
-          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}" title="La hoja de vida de siempre">⬇️ Word</button><button class="btn sec" data-hvd="ats:${h.id}" title="Diseño sencillo que leen los sistemas de las empresas">ATS</button><button class="btn sec" data-hvsop="${h.id}" title="Leer cédula, diplomas y certificados (fotos, PDF o el Word con imágenes) y llenar fechas y datos">📎 Soportes</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
+          <div class="cli-acc"><button class="btn sec" data-hved="${h.id}">✏️ Editar</button><button class="btn sec" data-hvdup="${h.id}">⧉ Duplicar</button><button class="btn" data-hvw="${h.id}" title="La hoja de vida de siempre">⬇️ Word</button><button class="btn sec" data-hvd="ats:${h.id}" title="Diseño sencillo que leen los sistemas de las empresas">ATS</button><button class="btn sec" data-hvweb="${h.id}" title="Hoja de vida en línea: un enlace privado para compartir">🌐 En línea</button><button class="btn sec" data-hvsop="${h.id}" title="Leer cédula, diplomas y certificados (fotos, PDF o el Word con imágenes) y llenar fechas y datos">📎 Soportes</button><button class="btn sec quitar" data-hvx="${h.id}" title="Quitar esta hoja de vida">🗑️</button></div></div>`).join('')
         : '<p class="muted" style="margin:8px 0 0">Todavía no tiene hoja de vida. Toca "＋ Nueva".</p>'}</div>`;
   const secDocs = `<div class="card" id="secDocs"><h3 class="cli-h">📑 Documentos</h3><p class="muted cli-sub">Se abre con sus datos puestos para revisar y completar.</p>
       <div class="cli-docs">${Object.entries(DOCS).map(([k, x]) => `<button class="cli-doc" data-doc="${k}"><span>${x.e}</span>${esc(x.t)}</button>`).join('')}</div></div>`;
@@ -203,6 +203,7 @@ function ficha(ir) {
   if (nv) nv.onclick = () => { const h = nuevaHV(d.hvs.length ? 'Hoja de vida ' + (d.hvs.length + 1) : 'Principal'); asistenteHV(h, true); };
   mainEl.querySelectorAll('[data-hved]').forEach(b => b.onclick = () => asistenteHV(JSON.parse(JSON.stringify(d.hvs.find(h => h.id === b.dataset.hved))), false));
   mainEl.querySelectorAll('[data-hvw]').forEach(b => b.onclick = () => wordHV(d.hvs.find(h => h.id === b.dataset.hvw), b));
+  mainEl.querySelectorAll('[data-hvweb]').forEach(b => b.onclick = () => enlaceHV(d.hvs.find(h => h.id === b.dataset.hvweb)));
   mainEl.querySelectorAll('[data-hvsop]').forEach(b => b.onclick = () => leerSoportesHV(d.hvs.find(h => h.id === b.dataset.hvsop), b));
   mainEl.querySelectorAll('[data-hvd]').forEach(b => b.onclick = () => { const [tipo, id] = b.dataset.hvd.split(':'); disenoHV(d.hvs.find(h => h.id === id), tipo); });
   mainEl.querySelectorAll('[data-hvdup]').forEach(b => b.onclick = async () => {
@@ -266,6 +267,32 @@ function montarTramites(d) {
   const b = mainEl.querySelector('#bTram');
   if (b) b.oninput = () => { const q = b.value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
     mainEl.querySelectorAll('.tp-g').forEach(g => { let n = 0; g.querySelectorAll('a').forEach(a => { const ok = !q || a.dataset.t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(q); a.style.display = ok ? '' : 'none'; if (ok) n++; }); g.style.display = n ? '' : 'none'; }); };
+}
+
+/* ---------- hoja de vida en línea: enlace privado (solo la ve quien lo tiene) ---------- */
+async function enlaceHV(h) {
+  const { esc, modal, toast, rpc, S } = C();
+  if (!h) return;
+  if (!cli.id) return toast('Primero guarda el cliente.', true);
+  const url = t => /^(localhost|127\.)/.test(location.hostname) ? location.origin + '/perfil.html?t=' + t : 'https://hv.ivanrodriguez.app/' + t;
+  const pedir = accion => rpc('cj_hv_link', { p_token: S.token, p_cliente: cli.id, p_hv: h.id, p_accion: accion });
+  let r; try { r = await pedir('ver'); } catch (e) { return toast(e.message, true); }
+  const nombre = nombreDe(cli.data) || 'la persona';
+  modal(`<h3>🌐 Hoja de vida en línea</h3><p class="muted">${esc(nombre)} · ${esc(h.titulo || 'Principal')}. Solo la ve quien tenga este enlace; siempre muestra la información más reciente y tiene el botón para bajarla en Word.</p>
+    <input class="inp" id="hvUrl" readonly style="margin-top:10px;font-size:14px">
+    <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="btn grow" id="hvCop">📋 Copiar</button><a class="btn sec grow" id="hvWa" target="_blank" rel="noopener">💬 WhatsApp</a><a class="btn sec grow" id="hvVer" target="_blank" rel="noopener">👀 Ver</a></div>
+    <details style="margin-top:12px"><summary class="muted">Seguridad del enlace</summary><p class="muted" style="margin-top:6px">Si el enlace llegó a quien no debía, cámbialo por uno nuevo: el anterior deja de funcionar.</p>
+      <div class="row" style="gap:8px;margin-top:8px"><button class="btn sec grow" id="hvNuevo">🔄 Cambiar enlace</button><button class="btn sec grow quitar" id="hvApagar">⛔ Apagar</button></div></details>
+    <button class="btn sec full" data-close style="margin-top:12px">Cerrar</button>`, (box, close) => {
+    const pinta = t => {
+      const u = url(t); box.querySelector('#hvUrl').value = u; box.querySelector('#hvVer').href = u;
+      box.querySelector('#hvWa').href = 'https://wa.me/' + (V(cli.data.celular).replace(/\D/g, '').length === 10 ? '57' + V(cli.data.celular).replace(/\D/g, '') : '') + '?text=' + encodeURIComponent('Hola ' + V(cli.data.nombres).split(' ')[0].toLowerCase().replace(/^\p{L}/u, c => c.toUpperCase()) + ', esta es tu hoja de vida en línea. Ahí la puedes ver y bajar en Word cuando la necesites: ' + u);
+    };
+    pinta(r.token);
+    box.querySelector('#hvCop').onclick = async () => { const i = box.querySelector('#hvUrl'); try { await navigator.clipboard.writeText(i.value); toast('Enlace copiado ✓'); } catch (e) { i.select(); document.execCommand('copy'); toast('Enlace copiado ✓'); } };
+    box.querySelector('#hvNuevo').onclick = async () => { if (!confirm('¿Cambiar el enlace? El anterior deja de funcionar.')) return; try { const x = await pedir('nuevo'); pinta(x.token); toast('Enlace nuevo listo ✓'); } catch (e) { toast(e.message, true); } };
+    box.querySelector('#hvApagar').onclick = async () => { if (!confirm('¿Apagar el enlace? Nadie podrá ver esta hoja de vida en línea hasta que crees uno nuevo.')) return; try { await pedir('apagar'); toast('Enlace apagado'); close(); } catch (e) { toast(e.message, true); } };
+  });
 }
 
 /* ---------- soportes: cédula, diplomas y certificados en foto, PDF o Word ---------- */

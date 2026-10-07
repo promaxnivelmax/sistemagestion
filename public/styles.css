@@ -342,3 +342,18 @@ body.en-login #app{position:relative;z-index:2;padding-bottom:120px}
 .tp-c{min-width:0}.tp-c b{overflow-wrap:anywhere}
 .cli-tabs .ti{font-style:normal}@media (max-width:480px){.cli-tabs .ti{display:none}}
 .cli-aviso{margin-top:12px;line-height:1.5}
+/* guía de la primera vez */
+.guia{position:fixed;inset:0;z-index:200}
+.guia-velo{position:fixed;inset:0;background:rgba(16,38,43,.55)}
+.guia-foco{position:fixed;border-radius:14px;box-shadow:0 0 0 9999px rgba(16,38,43,.55);outline:3px solid #ffc21a;pointer-events:none;transition:all .25s}
+.guia-card{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);width:min(440px,calc(100% - 24px));background:#fff;border:3px solid #10262b;border-radius:18px;box-shadow:0 5px 0 #10262b;padding:16px 16px 14px;animation:guiaIn .25s ease}
+.guia-card h2{font-size:19px;margin:4px 0 6px}.guia-card p{font-size:15px;line-height:1.45;color:#10262b}
+.guia-e{font-size:30px}
+.guia-dots{display:flex;gap:5px;margin-top:12px}.guia-dots i{width:8px;height:8px;border-radius:9px;background:#d9dde0}.guia-dots i.on{background:#ffc21a;width:20px;border:1px solid #10262b}
+@keyframes guiaIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+/* nombres largos de negocio (Trámites y Servicios Laura) */
+.login h1,.login .logo{white-space:normal;max-width:100%}
+.login .logo>span{display:block;white-space:normal;overflow-wrap:break-word;text-align:center;max-width:92vw;font-size:clamp(26px,8vw,36px);line-height:1.1}
+header.top .logo>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:480px){header.top .logo{font-size:16px;min-width:0;flex:1 1 auto}header.top .in{gap:6px}header.top .who{flex:none}}
+.users button:only-child{grid-column:1/-1}
