@@ -4,16 +4,70 @@
   "buildCommand": "echo listo",
   "outputDirectory": "public",
   "headers": [
-    { "source": "/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-    { "source": "/*", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }] }
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000"
+        }
+      ]
+    }
   ],
-  "domains": [
-    "caja.ivanrodriguez.app",
-    "laura.ivanrodriguez.app",
-    "hv.ivanrodriguez.app"
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "sistemagestion-seven.vercel.app"
+        }
+      ],
+      "destination": "https://caja.ivanrodriguez.app/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "hv.ivanrodriguez.app"
+        }
+      ],
+      "destination": "https://ivanrodriguez.app",
+      "permanent": false
+    }
   ],
   "rewrites": [
-    { "source": "/api/:path(","destination":"/api/:path" },
-    { "source": "/:t([A-Za-z0-9_-]{20,40})", "has": [{ "type": "host", "value": "hv.ivanrodriguez.app" }], "destination": "/perfil.html" }
+    {
+      "source": "/:t([A-Za-z0-9_-]{20,40})",
+      "has": [
+        {
+          "type": "host",
+          "value": "hv.ivanrodriguez.app"
+        }
+      ],
+      "destination": "/perfil.html"
+    }
   ]
 }
