@@ -64,7 +64,8 @@ function filaCuenta(c) {
 
 function pintar() {
   const { esc } = C();
-  const secs = [['res', '📊 Resumen'], ['loc', '🏪 Local'], ['nom', '👥 Nómina'], ['yo', '🏠 Casa'], ['cfg', '⚙️ Configurar']];
+  const secs = [['res', '📊 Resumen'], ['loc', '🏪 Local'], ['web', '🌐 Página'], ['nom', '👥 Nómina'], ['yo', '🏠 Casa'], ['cfg', '⚙️ Configurar']]
+    .filter(([k]) => k !== 'web' || !window.NEG || window.NEG.id === '52'); // las ventas de la página son de Iván (La 52)
   const m = new Date(F.mes + 'T12:00:00');
   mainEl.innerHTML = `<div class="card fz-top"><div class="row"><h2 class="grow" style="margin:0">💼 Finanzas · ${MESES[m.getMonth()]} ${m.getFullYear()}</h2>
       <button class="chip" id="mAnt" title="Mes anterior">‹</button><button class="chip" id="mSig" title="Mes siguiente" ${F.mes >= F.hoy.slice(0, 8) + '01' ? 'disabled' : ''}>›</button></div>
@@ -74,7 +75,32 @@ function pintar() {
   mainEl.querySelector('#mAnt').onclick = () => cambiarMes(-1);
   mainEl.querySelector('#mSig').onclick = () => cambiarMes(1);
   const body = mainEl.querySelector('#fzBody');
-  ({ res: vResumen, loc: vLocal, nom: vNomina, yo: vYo, cfg: vConfig })[sec](body);
+  ({ res: vResumen, loc: vLocal, web: vWeb, nom: vNomina, yo: vYo, cfg: vConfig })[sec](body);
+}
+
+/* ---------- PÁGINA: ventas en línea de ivanrodriguez.app (pagadas por Wompi) ---------- */
+async function vWeb(b) {
+  const { fmt, esc, rpc, S } = C();
+  b.innerHTML = '<p class="muted" style="margin-top:14px">Cargando ventas de la página…</p>';
+  let W;
+  try { W = await rpc('fz_ventas_web', { p_token: S.token, p_mes: F.mes }); }
+  catch (e) { b.innerHTML = `<div class="note bad">No pude traer las ventas de la página: ${esc(e.message)}</div>`; return; }
+  const m = new Date(F.mes + 'T12:00:00'), esMes = F.mes === F.hoy.slice(0, 8) + '01';
+  const fecha = s => { const [d, h] = String(s || '').split(' '); const p = (d || '').split('-'); return p.length === 3 ? `${+p[2]} ${MESES[+p[1] - 1].slice(0, 3)} · ${h || ''}` : esc(s); };
+  b.innerHTML = `
+    <div class="card"><h2>🌐 Ventas de la página</h2>
+      <p class="muted">Lo que la gente paga por Wompi en ivanrodriguez.app (hojas de vida, documentos). Esta plata llega a tu Wompi, no a la caja del local.</p>
+      <div class="fz-sem" style="margin-top:10px">
+        <div><span>${MESES[m.getMonth()]}</span><b>${fmt(W.total)}</b><span>${W.n} venta${W.n === 1 ? '' : 's'}</span></div>
+        ${esMes ? `<div><span>hoy</span><b>${fmt(W.hoy)}</b><span>${W.n_hoy} venta${W.n_hoy === 1 ? '' : 's'}</span></div>` : ''}
+        <div><span>desde el inicio</span><b>${fmt(W.historico)}</b><span>${W.n_historico} ventas</span></div>
+      </div></div>
+    <div class="card"><h2>Por servicio</h2>
+      ${W.por_servicio.length ? `<table class="t"><tr><th>Servicio</th><th class="n">Cuántas</th><th class="n">Total</th></tr>
+        ${W.por_servicio.map(x => `<tr><td>${esc(x.concepto)}</td><td class="n">${x.n}</td><td class="n">${fmt(x.valor)}</td></tr>`).join('')}</table>`
+        : '<p class="muted">Este mes todavía no hay ventas en la página.</p>'}</div>
+    ${W.ultimas.length ? `<div class="card"><h2>Últimas ventas</h2><table class="t"><tr><th>Cuándo</th><th>Qué y quién</th><th class="n">Valor</th></tr>
+      ${W.ultimas.map(x => `<tr><td>${fecha(x.fecha)}</td><td>${esc(x.concepto)}<br><span class="muted">${esc(x.nombre || '—')}</span></td><td class="n">${x.valor ? fmt(x.valor) : '—'}</td></tr>`).join('')}</table></div>` : ''}`;
 }
 async function cambiarMes(d) {
   const x = new Date(F.mes + 'T12:00:00'); x.setMonth(x.getMonth() + d);
