@@ -128,10 +128,6 @@ function pinta(D) {
           ${V(p.estado_civil) ? `<hr><h3>🪪 Datos</h3><div class="chips"><span class="chip te">${esc(bonito(p.estado_civil))}</span>${V(p.lugar_nac) ? `<span class="chip">Nació en ${esc(bonito(p.lugar_nac))}</span>` : ''}</div>` : ''}
         </div>
       </div>
-      <div class="card nopr" style="margin-top:18px"><div class="pad">
-        <button class="bajar" id="bajar">⬇️ Descargar en Word</button>
-        <p style="color:var(--sub);font-size:13px;margin-top:10px;text-align:center">Siempre sale con la información más reciente.</p>
-      </div></div>
     </div>
     <div>
       ${V(h.sin_exp) ? `<div class="card"><div class="pad"><div class="titulo"><span>🙋</span><h2>Sobre mí</h2></div><p class="perfil">${esc(V(h.sin_exp).charAt(0) + V(h.sin_exp).slice(1).toLowerCase())}</p></div></div>` : ''}
@@ -145,26 +141,11 @@ function pinta(D) {
           <div class="fecha">🎓 ${e.actual ? 'En curso <span class="actual">Estudiando</span>' : esc(/^\d{4}-\d{2}-\d{2}$/.test(V(e.fin)) ? fecha(e.fin) : anio(e.fin) || '')}</div></div>`).join('') : '<p class="perfil">Sin estudios registrados.</p>'}
       </div></div>
       ${refs.length ? `<div class="card"><div class="pad"><div class="titulo"><span>🤝</span><h2>Referencias</h2></div>
-        <div class="chips" style="margin-top:6px">${refs.map(r => `<span class="chip">${esc(bonito(r.nombre))}${V(r.prof) ? ' · ' + esc(bonito(r.prof)) : ''}</span>`).join('')}</div>
-        <p class="nota">📄 Los teléfonos de las referencias están en la hoja de vida en Word.</p></div></div>` : ''}
+        <div class="chips" style="margin-top:6px">${refs.map(r => `<span class="chip">${esc(bonito(r.nombre))}${V(r.prof) ? ' · ' + esc(bonito(r.prof)) : ''}</span>`).join('')}</div></div></div>` : ''}
     </div>
   </div>
   <p class="pie">Hoja de vida publicada por <b>${esc(neg)}</b> · actualizada el ${esc(fecha(D.actualizado))}<br>Solo la ve quien tiene este enlace.</p>`;
-  const b = document.getElementById('bajar');
-  b.onclick = async () => {
-    b.disabled = true; const t = b.textContent; b.textContent = '⏳ Preparando…';
-    try {
-      const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ perfil: token, formato: 'word' }) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'No se pudo generar'); }
-      const blob = await r.blob(), url = URL.createObjectURL(blob), a = document.createElement('a');
-      a.href = url; a.download = 'hoja-de-vida-' + nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').toLowerCase() + '.docx';
-      document.body.appendChild(a); a.click(); setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 60000);
-      b.textContent = '✅ Descargada';
-      setTimeout(() => { b.textContent = t; b.disabled = false; }, 2500);
-    } catch (e) { b.textContent = t; b.disabled = false; alertar(e.message); }
-  };
 }
-function alertar(m) { let n = document.getElementById('aviso'); if (!n) { n = document.createElement('p'); n.id = 'aviso'; n.className = 'nota'; n.style.background = '#fde1e5'; document.getElementById('bajar').after(n); } n.textContent = '⚠️ ' + m; }
 
 if (!token || token.length < 20) error('Enlace incompleto', 'Revisa que hayas copiado el enlace completo que te enviaron.');
 else rpc('cj_hv_publica', { p_link: token }).then(pinta).catch(e => error('No disponible', e.message));
