@@ -296,7 +296,7 @@ async function enlaceHV(h) {
 }
 
 /* ---------- soportes: cédula, diplomas y certificados en foto, PDF o Word ---------- */
-function cargarOCR() { return window.OCR ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/ocr.js?v=2'; s.onload = ok; s.onerror = () => no(new Error('no cargó el lector')); document.head.appendChild(s); }); }
+function cargarOCR() { return window.OCR ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/ocr.js?v=3'; s.onload = ok; s.onerror = () => no(new Error('no cargó el lector')); document.head.appendChild(s); }); }
 function avisoSoportes(items) {
   const { esc } = C(); const n = document.createElement('div'); n.className = 'note ok cli-aviso';
   n.innerHTML = `<b>📷 Leí de los soportes</b> <span class="muted">(revisa que esté bien)</span><br>${items.map(esc).join('<br>')}`;
@@ -329,10 +329,10 @@ function subirHV() {
     if (/\.docx$/i.test(f.name)) {
       try { r = await window.HVD.leer(f); } catch (e) { return C().toast('No pude leer ese Word: ' + e.message, true); }
       h = Object.assign(nuevaHV('Importada'), r.hv);
-      try { if ((await window.HVD.imagenes(f)).length) { await cargarOCR(); hechos = (await window.OCR.leerSoportes([f], r.d, h, m => C().toast('📷 Soportes: ' + m), { sinTextoWord: true })).hechos; } } catch (e) { C().toast('No pude leer las imágenes: ' + e.message, true); }
+      // solo el texto de la hoja de vida; los soportes se agregan aparte con su botón
     } else {
-      // PDF (con texto o escaneado) o foto de la hoja de vida: se lee todo, incluidos los soportes que traiga
-      try { await cargarOCR(); r = await window.OCR.leerHV(f, m => C().toast('📷 ' + m)); } catch (e) { return C().toast('No pude leer ese archivo: ' + e.message, true); }
+      // PDF (con texto o escaneado) o foto de la hoja de vida: se lee solo la hoja de vida, sin los soportes
+      try { await cargarOCR(); r = await window.OCR.leerHVTexto(f, m => C().toast('📷 ' + m)); } catch (e) { return C().toast('No pude leer ese archivo: ' + e.message, true); }
       h = Object.assign(nuevaHV('Importada'), r.hv); hechos = r.hechos;
     }
     if (!V(r.d.nombres) && !V(r.d.num_id)) return C().toast('No encontré nombre ni cédula en ese Word. Llénala a mano con ＋ Nuevo.', true);
