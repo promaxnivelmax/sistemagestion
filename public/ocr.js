@@ -42,7 +42,7 @@ async function lienzo(blob) {
   const g = c.getContext('2d'); g.filter = 'grayscale(1) contrast(1.25)'; g.drawImage(bmp, 0, 0, c.width, c.height);
   return c;
 }
-async function pdfPaginas(file, max = 12) {
+async function pdfPaginas(file, max = 12, soloTexto = false) {
   const pdfjs = await import(PDFJS + 'pdf.min.mjs');
   pdfjs.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.mjs';
   const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise, out = [];
@@ -56,7 +56,8 @@ async function pdfPaginas(file, max = 12) {
     const conTexto = txt.replace(/\s/g, '').length > 60;
     if (conTexto) out.push({ texto: txt, pagina: i });
     // página escaneada, o con fotos pegadas (cédula, diplomas): se lee la imagen completa
-    if (!conTexto || fotos) out.push({ img: await new Promise(r => c.toBlob(r, 'image/png')), pagina: i, deFoto: conTexto });
+    // (al subir una hoja de vida solo se lee el texto: las fotos pegadas no se miran)
+    if (!conTexto || (fotos && !soloTexto)) out.push({ img: await new Promise(r => c.toBlob(r, 'image/png')), pagina: i, deFoto: conTexto });
   }
   return out;
 }
@@ -279,5 +280,17 @@ async function leerHV(file, avisa) {
   const r = window.HVD.parsear(hojas.map(p => p.texto).join('\n').split('\n'));
   return { d: r.d, hv: r.hv, hechos: aplicar(sop, r.d, r.hv) };
 }
-window.OCR = { leerHV, leerSoportes, piezas, textos, aplicar, fusionar, fechas, cedula, diploma, laboral, esCedula, esDiploma, esLaboral, esHV };
+/* subir una hoja de vida: SOLO el texto de la hoja de vida, sin mirar los soportes que traiga
+   (PDF con texto: se usa el texto; PDF escaneado o foto: se lee la imagen; páginas que son soportes se saltan) */
+async function leerHVTexto(file, avisa) {
+  const n = file.name || 'imagen', ps = [];
+  if (/\.pdf$/i.test(n) || file.type === 'application/pdf') (await pdfPaginas(file, 12, true)).forEach(p => ps.push(Object.assign({ nombre: n + ' p' + p.pagina }, p)));
+  else ps.push({ nombre: n, img: file });
+  await textos(ps, avisa);
+  const esSop = p => esCedula(p.texto) || esLaboral(p.texto) || (esDiploma(p.texto) && !esHV(p.texto));
+  let hojas = ps.filter(p => p.texto && !esSop(p)); if (!hojas.length) hojas = ps.filter(p => p.texto);
+  const r = window.HVD.parsear(hojas.map(p => p.texto).join('\n').split('\n'));
+  return { d: r.d, hv: r.hv, hechos: [] };
+}
+window.OCR = { leerHV, leerHVTexto, leerSoportes, piezas, textos, aplicar, fusionar, fechas, cedula, diploma, laboral, esCedula, esDiploma, esLaboral, esHV };
 })();
