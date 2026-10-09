@@ -244,7 +244,7 @@ function guia(desde = 0) {
 window.GUIA_VER = () => guia(0);
 
 function pintarMarco() {
-  const tabs = esAdmin() ? [['hoy', 'Hoy'], ['cli', 'Clientes'], ['rep', 'Reportes'], ['fz', 'Finanzas'], ['hist', 'Historial'], ['aj', 'Ajustes']] : [['hoy', 'Hoy'], ['cli', '👥 Clientes']];
+  const tabs = esAdmin() ? [['hoy', 'Hoy'], ['cli', 'Clientes'], ['rep', 'Reportes'], ['fz', 'Finanzas'], ...(NEG.id === '52' ? [['vac', 'Vacantes']] : []), ['hist', 'Historial'], ['aj', 'Ajustes']] : [['hoy', 'Hoy'], ['cli', '👥 Clientes']];
   app.innerHTML = `<header class="top"><div class="in">${marca('Caja')}<span class="who">${esc(S.yo.nombre)}</span>
       ${esAdmin() ? `<button class="lnk enl" id="enLinea" title="Quién está conectado">🟢 <b id="enN">${(S.enLinea || []).length}</b></button>` : '<button class="lnk" id="miClave">Mi clave</button>'}<button class="lnk" id="salir">Salir</button></div>
       ${tabs.length ? `<nav class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</nav>` : ''}
@@ -259,7 +259,48 @@ function pintarMarco() {
   if (S.tab === 'aj') return vistaAjustes(main);
   if (S.tab === 'cli') { if (window.CLI) return window.CLI(main); main.innerHTML = '<div class="note bad">No cargó el módulo de clientes. Recarga la página.</div>'; return; }
   if (S.tab === 'fz') { if (window.FZ) return window.FZ(main); main.innerHTML = '<div class="note bad">No cargó el módulo de finanzas. Recarga la página.</div>'; return; }
+  if (S.tab === 'vac' && esAdmin() && NEG.id === '52') return vistaVacantes(main);
   vistaHoy(main);
+}
+
+/* ---------- VACANTES NUEVAS: las encuentra solo el buscador automático (SPE y SENA), cada hora ---------- */
+const PANEL_PUBLICAR = 'https://ivanrodriguez.app/buscador/admin.html';
+async function vistaVacantes(main) {
+  main.innerHTML = '<p class="muted" style="margin-top:14px">Buscando las vacantes nuevas…</p>';
+  let V;
+  try { V = await rpc('cj_vac_nuevas', { p_token: S.token }); } catch (e) { main.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
+  const L = V.lista || [];
+  const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const hoyISO = new Date(Date.now() - 5 * 3600e3).toISOString().slice(0, 10);
+  const dias = c => c ? Math.round((new Date(c + 'T12:00:00Z') - new Date(hoyISO + 'T12:00:00Z')) / 864e5) : 99;
+  const cierra = c => { if (!c) return 'sin fecha'; const d = dias(c); return d <= 0 ? '🔥 cierra HOY' : d === 1 ? '🔥 cierra MAÑANA' : `cierra el ${+c.slice(8)} ${MES[+c.slice(5, 7) - 1]}`; };
+  const deBarranca = m => /barrancabermeja/i.test(String(m || '').normalize('NFD').replace(/[̀-ͯ]/g, ''));
+  // texto para pegar en el panel de publicar: empresa, cargo y código (así lo lee el panel)
+  const texto = lista => { let t = '', emp = null; lista.slice().sort((a, b) => (a.empresa || '').localeCompare(b.empresa || '') || (a.cierre || '9').localeCompare(b.cierre || '9')).forEach(v => {
+    const e = (v.empresa || 'Confidencial').toUpperCase(); if (e !== emp) { t += (t ? '\n' : '') + e + '\n'; emp = e; }
+    t += `${v.titulo}\nCÓDIGO: ${v.codigo}\n`; }); return t.trim(); };
+  const r = V.resultado || {};
+  main.innerHTML = `<div class="card"><div class="row"><h2 class="grow" style="margin:0">📋 Vacantes nuevas <span class="muted">(${L.length})</span></h2>
+      <button class="btn sec" id="vBuscar">🔄 Buscar ahora</button></div>
+      <p class="muted" style="margin-top:6px">El buscador revisa solo, cada hora, el Servicio de Empleo (empresas de Barranca que ya conocemos) y la Agencia del SENA. Aquí salen las que <b>todavía no has publicado</b>; cuando las publicas, desaparecen solas.${V.ultima ? ` Última búsqueda: <b>${esc(V.ultima.slice(11))}</b> del ${esc(+V.ultima.slice(8, 10) + ' ' + MES[+V.ultima.slice(5, 7) - 1])}.` : ''}</p>
+      ${r.errores && r.errores.length ? `<div class="note warn">⚠️ En la última búsqueda un portal no respondió (${esc(r.errores.join(', '))}). Vuelve a intentar en un rato.</div>` : ''}
+      ${L.length ? `<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="btn" id="vCopiar">📋 Copiar todas para publicar</button>
+        <button class="btn sec" id="vCopiarB">📋 Solo las de Barranca</button><a class="btn sec" href="${PANEL_PUBLICAR}" target="_blank" rel="noopener">Abrir el panel de publicar →</a></div>
+        <p class="muted" style="margin-top:6px">Copias, abres el panel de publicar, pegas y le das Publicar vacantes.</p>` : '<p style="margin-top:10px">✅ No hay vacantes nuevas sin publicar por ahora.</p>'}
+    </div>
+    ${L.length ? `<div class="card"><ul class="list">${L.map(v => `<li><div class="d" style="flex:1;min-width:0">
+        <div><b>${esc(v.titulo)}</b></div>
+        <div class="muted">${esc(v.empresa || 'Confidencial')} · ${v.tipo === 'sena' ? 'SENA' : 'SPE'} ${esc(v.codigo)}</div>
+        <div class="muted">${esc(cierra(v.cierre))}${v.municipio && !deBarranca(v.municipio) ? ` · <b style="color:var(--bad)">📍 ${esc(v.municipio)}</b>` : ''}${v.salario ? ' · ' + esc(v.salario) : ''}</div></div>
+        <button class="btn sec" data-vd="${esc(v.codigo)}" title="No la voy a publicar">✕</button></li>`).join('')}</ul></div>` : ''}
+    ${V.descartadas ? `<p class="muted" style="text-align:center">${V.descartadas} descartada${V.descartadas === 1 ? '' : 's'} (no salen en la lista).</p>` : ''}`;
+  const copiar = async (lista, b) => { const t = texto(lista); try { await navigator.clipboard.writeText(t); } catch (e) { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); } b.textContent = `✅ Copiadas (${lista.length})`; toast('Copiadas. Ahora pégalas en el panel de publicar.'); };
+  const c1 = main.querySelector('#vCopiar'); if (c1) c1.onclick = () => copiar(L, c1);
+  const c2 = main.querySelector('#vCopiarB'); if (c2) c2.onclick = () => copiar(L.filter(v => deBarranca(v.municipio)), c2);
+  main.querySelectorAll('[data-vd]').forEach(b => b.onclick = async () => { b.disabled = true; try { await rpc('cj_vac_nuevas', { p_token: S.token, p_accion: 'descartar', p_codigo: b.dataset.vd }); vistaVacantes(main); } catch (e) { b.disabled = false; toast(e.message, true); } });
+  main.querySelector('#vBuscar').onclick = async e => { const b = e.currentTarget; b.disabled = true; b.textContent = '⏳ Buscando… (1 minuto)';
+    try { await rpc('cj_vac_buscar', { p_token: S.token }); setTimeout(() => { if (S.tab === 'vac') vistaVacantes(main); }, 45000); }
+    catch (er) { b.disabled = false; b.textContent = '🔄 Buscar ahora'; toast(er.message, true); } };
 }
 
 /* ---------- HOY / CAJA ---------- */
