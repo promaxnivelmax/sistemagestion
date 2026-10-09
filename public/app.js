@@ -263,7 +263,7 @@ function pintarMarco() {
   vistaHoy(main);
 }
 
-/* ---------- VACANTES NUEVAS: las encuentra solo el buscador automático (SPE y SENA), cada hora ---------- */
+/* ---------- VACANTES NUEVAS: las encuentra solo el buscador automático (SPE y SENA), cada 12 horas ---------- */
 const PANEL_PUBLICAR = 'https://ivanrodriguez.app/buscador/admin.html';
 async function vistaVacantes(main) {
   main.innerHTML = '<p class="muted" style="margin-top:14px">Buscando las vacantes nuevas…</p>';
@@ -282,7 +282,7 @@ async function vistaVacantes(main) {
   const r = V.resultado || {};
   main.innerHTML = `<div class="card"><div class="row"><h2 class="grow" style="margin:0">📋 Vacantes nuevas <span class="muted">(${L.length})</span></h2>
       <button class="btn sec" id="vBuscar">🔄 Buscar ahora</button></div>
-      <p class="muted" style="margin-top:6px">El buscador revisa solo, cada hora, el Servicio de Empleo (empresas de Barranca que ya conocemos) y la Agencia del SENA. Aquí salen las que <b>todavía no has publicado</b>; cuando las publicas, desaparecen solas.${V.ultima ? ` Última búsqueda: <b>${esc(V.ultima.slice(11))}</b> del ${esc(+V.ultima.slice(8, 10) + ' ' + MES[+V.ultima.slice(5, 7) - 1])}.` : ''}</p>
+      <p class="muted" style="margin-top:6px">El buscador revisa solo, dos veces al día (6 a. m. y 6 p. m.), el Servicio de Empleo (empresas de Barranca que ya conocemos) y la Agencia del SENA. Aquí salen las que <b>todavía no has publicado</b>; cuando las publicas, desaparecen solas.${V.ultima ? ` Última búsqueda: <b>${esc(V.ultima.slice(11))}</b> del ${esc(+V.ultima.slice(8, 10) + ' ' + MES[+V.ultima.slice(5, 7) - 1])}.` : ''}</p>
       ${r.errores && r.errores.length ? `<div class="note warn">⚠️ En la última búsqueda un portal no respondió (${esc(r.errores.join(', '))}). Vuelve a intentar en un rato.</div>` : ''}
       ${L.length ? `<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="btn" id="vCopiar">📋 Copiar todas para publicar</button>
         <button class="btn sec" id="vCopiarB">📋 Solo las de Barranca</button><a class="btn sec" href="${PANEL_PUBLICAR}" target="_blank" rel="noopener">Abrir el panel de publicar →</a></div>
