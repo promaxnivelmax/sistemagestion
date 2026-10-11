@@ -460,8 +460,15 @@ function pintarForm() {
   let cuerpo = '';
   if (f.tipo === 'venta' || f.tipo === 'gasto') {
     const lista = f.tipo === 'venta' ? cats.venta : cats.gasto;
-    cuerpo += `<span class="lbl">${f.tipo === 'venta' ? '¿Qué vendiste?' : '¿En qué se gastó?'}</span>
-      <div class="chips" id="cats">${lista.map(n => `<button type="button" class="chip ${f.cat === n ? 'on' : ''}" data-cat="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
+    const chip = (n, x = '') => `<button type="button" class="chip ${x} ${f.cat === n ? 'on' : ''}" data-cat="${esc(n)}">${esc(n)}</button>`;
+    cuerpo += `<span class="lbl">${f.tipo === 'venta' ? '¿Qué vendiste?' : '¿En qué se gastó?'}</span>`;
+    if (lista.length > 10) {
+      const top = masUsados(f.tipo, lista);
+      if (top.length) cuerpo += `<div class="lbl2">⭐ Los más usados</div><div class="chips" id="top">${top.map(n => chip(n, 'top')).join('')}</div>`;
+      cuerpo += `<input class="inp busca" id="bcat" type="search" autocomplete="off" placeholder="🔎 Buscar ${f.tipo === 'venta' ? 'servicio' : 'gasto'}: escribe unas letras (ej. cert, dian, italco)${PC() ? ' · tecla B' : ''}">
+        <div class="lbl2" id="bcatTit">Todos (${lista.length})</div>`;
+    }
+    cuerpo += `<div class="chips" id="cats">${lista.map(n => chip(n)).join('')}</div><p class="muted hide" id="bcatNada">No hay ninguno con esas letras. Si es nuevo, agrégalo en Ajustes.</p>`;
   }
   if (f.tipo === 'retiro') cuerpo += `<p class="muted" style="margin-top:10px">La plata que <b>se lleva ${NEG.dueno}</b> de la caja. Cuenta como su sueldo.</p>`;
   if (f.tipo === 'ingreso') cuerpo += `<p class="muted" style="margin-top:10px">Plata que <b>llega y no es una venta</b>: te mandaron a la llave o a Nequi, te devolvieron un préstamo, etc. No cuenta como venta${NEG.bonos ? ' ni para los bonos' : ''}.</p>`;
@@ -479,8 +486,23 @@ function pintarForm() {
       <button type="button" class="act ${f.tipo === 'cambio' ? 'on' : ''}" data-t="cambio">⇄ Cambio<small>Nequi, llave ↔ efectivo${PC() ? ' · C' : ''}</small></button>
       <button type="button" class="act ${f.tipo === 'ingreso' ? 'on' : ''}" data-t="ingreso">↓ Entrada<small>llega plata, no es venta${PC() ? ' · I' : ''}</small></button></div>
     ${cuerpo}<button type="button" class="btn full ${f.tipo === 'venta' || f.tipo === 'ingreso' ? 'ok' : f.tipo === 'cambio' ? '' : 'bad'}" id="guardar">${TXT_BTN[f.tipo]}${PC() ? ' <small class="kbd">Enter</small>' : ''}</button>
-    ${PC() ? `<p class="atajos">⌨️ <b>V</b> venta · <b>G</b> gasto · <b>R</b> retiro · <b>C</b> cambio · <b>I</b> entrada · <b>← →</b> elegir ${f.tipo === 'gasto' ? 'gasto' : 'servicio'} · <b>E N L</b> efectivo, Nequi, llave (Nu)${f.tipo === 'cambio' ? ' (con Shift: lo que entregaste)' : ''} · <b>Enter</b> guardar · <b>Esc</b> borrar</p>` : ''}`;
+    ${PC() ? `<p class="atajos">⌨️ <b>V</b> venta · <b>G</b> gasto · <b>R</b> retiro · <b>C</b> cambio · <b>I</b> entrada · <b>B</b> buscar · <b>← →</b> elegir ${f.tipo === 'gasto' ? 'gasto' : 'servicio'} · <b>E N L</b> efectivo, Nequi, llave (Nu)${f.tipo === 'cambio' ? ' (con Shift: lo que entregaste)' : ''} · <b>Enter</b> guardar · <b>Esc</b> borrar</p>` : ''}`;
   const montoEl = box.querySelector('#monto');
+  const bcat = box.querySelector('#bcat');
+  if (bcat) {
+    const filtrar = () => {
+      const q = sinTilde(bcat.value).split(/\s+/).filter(Boolean);
+      let n = 0;
+      box.querySelectorAll('#cats [data-cat]').forEach(x => { const ok = q.every(w => sinTilde(x.dataset.cat).includes(w)); x.style.display = ok ? '' : 'none'; if (ok) n++; });
+      box.querySelector('#bcatNada').classList.toggle('hide', n > 0);
+      const t = box.querySelector('#bcatTit'); if (t) t.textContent = q.length ? `Encontrados (${n}) · Enter elige el primero` : `Todos (${box.querySelectorAll('#cats [data-cat]').length})`;
+    };
+    bcat.addEventListener('input', filtrar);
+    bcat.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); const p = [...box.querySelectorAll('#cats [data-cat]')].find(x => x.style.display !== 'none'); if (p) { elegirCat(p.dataset.cat); montoEl.focus(); } }
+      if (e.key === 'Escape') { e.preventDefault(); bcat.value = ''; filtrar(); }
+    });
+  }
   moneyInput(montoEl);
   montoEl.addEventListener('input', () => { f.monto = num(montoEl.value); });
   box.querySelector('#nota').addEventListener('input', e => { f.nota = e.target.value; });
@@ -496,6 +518,17 @@ function pintarForm() {
   };
   box.querySelector('#guardar').onclick = guardar;
   if (PC() && !document.querySelector('.modal')) setTimeout(() => { if (document.activeElement === document.body || !document.activeElement || document.activeElement.closest('#regBox')) montoEl.focus(); }, 0);
+}
+
+/* servicios más usados (se cuentan en este equipo; arranca con los más vendidos de la caja) */
+const USO_DEF = { venta: ['Impresión', 'Trabajo en computador', 'Trámite en línea', 'Postulación', 'Fotocopia', 'Registro o Actualización Hoja de vida'], gasto: [] };
+const sinTilde = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function usoLeer(tipo) { try { return JSON.parse(localStorage.getItem(`cj_uso_${NEG.id}_${tipo}`) || '{}') || {}; } catch { return {}; } }
+function usoSumar(tipo, cat) { try { const u = usoLeer(tipo); u[cat] = (u[cat] || 0) + 1; localStorage.setItem(`cj_uso_${NEG.id}_${tipo}`, JSON.stringify(u)); } catch { } }
+function masUsados(tipo, lista) {
+  const u = usoLeer(tipo), d = USO_DEF[tipo] || [];
+  const pt = n => (u[n] || 0) * 10 + (d.includes(n) ? d.length - d.indexOf(n) : 0);
+  return lista.filter(n => pt(n) > 0).sort((a, b) => pt(b) - pt(a)).slice(0, 6);
 }
 
 function cambiarTipo(t) { const f = S.f; S.f = nuevoForm(t); S.f.monto = f.monto; pintarForm(); }
@@ -521,6 +554,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); return guardar(); }
   if (enNota) { if (e.key === 'Escape') { e.preventDefault(); document.getElementById('monto').focus(); } return; }
   if (e.key === 'Escape') { e.preventDefault(); S.f.monto = 0; const m = document.getElementById('monto'); m.value = ''; m.focus(); return; }
+  if ((k === 'b' || e.key === '/') && document.getElementById('bcat')) { e.preventDefault(); return document.getElementById('bcat').focus(); }
   if (TECLA_TIPO[k]) { e.preventDefault(); return cambiarTipo(TECLA_TIPO[k]); }
   if (TECLA_MEDIO[k]) { e.preventDefault(); return elegirMedio(TECLA_MEDIO[k], e.shiftKey); }
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -549,6 +583,7 @@ async function guardar() {
     const cat = f.tipo === 'cambio' ? 'Cambio' : f.tipo === 'retiro' ? 'Retiro ' + NEG.dueno : f.tipo === 'ingreso' ? 'Entrada' : f.cat;
     const r = await rpc('cj_registrar_v2', { p_token: S.token, p_tipo: f.tipo, p_medio: medio, p_categoria: cat, p_monto: f.monto,
       p_nota: f.nota.trim(), p_sale: f.tipo === 'cambio' ? f.ent : null, p_cliente: f.uid });
+    if ((f.tipo === 'venta' || f.tipo === 'gasto') && !r.repetido) usoSumar(f.tipo, f.cat);
     toast(r.repetido ? `Ya estaba guardado: ${TIPOS[r.tipo]} de ${fmt(r.monto)}` : `✓ ${TIPOS[r.tipo]} de ${fmt(r.monto)} guardado`);
     S.f = nuevoForm(f.tipo === 'venta' ? 'venta' : 'venta');
     guardando = false;
