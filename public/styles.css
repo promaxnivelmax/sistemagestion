@@ -357,3 +357,8 @@ body.en-login #app{position:relative;z-index:2;padding-bottom:120px}
 header.top .logo>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:480px){header.top .logo{font-size:16px;min-width:0;flex:1 1 auto}header.top .in{gap:6px}header.top .who{flex:none}}
 .users button:only-child{grid-column:1/-1}
+
+/* buscador de servicios en la venta */
+.lbl2{font-size:13px;font-weight:700;margin:10px 0 6px;opacity:.75}
+.busca{margin-top:12px}
+.chip.top{box-shadow:inset 0 -3px 0 #ffc21a}
