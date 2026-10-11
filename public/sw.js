@@ -1,5 +1,5 @@
 // Caja La 52: guarda la página y sus archivos para abrir al instante. Los datos (ventas, clientes) siempre van a internet.
-const V = 'caja-v26';
+const V = 'caja-v27';
 const BASE = ['/', '/index.html', '/styles.css?v=22', '/app.js?v=15', '/cli.js?v=12', '/hvd.js?v=4', '/tram.js?v=1', '/fz.js?v=8', '/favicon.svg'];
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(V).then(c => c.addAll(BASE)).catch(() => {})); });
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k)))).then(() => self.clients.claim())));
@@ -7,6 +7,13 @@ self.addEventListener('fetch', e => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== 'GET' || u.origin !== location.origin) return; // la base de datos y los documentos no pasan por aquí
   const clave = r.mode === 'navigate' ? '/index.html' : r;
+  if (r.mode === 'navigate') { // la página siempre se pide nueva (así los cambios se ven al abrir); sin internet, la guardada
+    e.respondWith(caches.open(V).then(c => Promise.race([
+      fetch(r).then(res => { if (res.ok) c.put(clave, res.clone()); return res; }),
+      new Promise((ok, no) => setTimeout(no, 4000))
+    ]).catch(() => c.match(clave).then(g => g || fetch(r)))));
+    return;
+  }
   e.respondWith(caches.open(V).then(async c => {
     const guardado = await c.match(clave);
     const red = fetch(r).then(res => { if (res.ok) c.put(clave, res.clone()); return res; });
